@@ -8,7 +8,7 @@ This module provides:
     * [`rsvd`](@ref) / [`rsvdvals`](@ref): randomized SVD and singular values
     for general (possibly rectangular) operators, using power iteration and
     oversampling.
-    * [`reigen_hermitian`](@ref) / [`reigenvals_hermitian`](@ref): randomized
+    * [`reigen_hermitian`](@ref) / [`reigvals_hermitian`](@ref): randomized
     eigen-decomposition and eigenvalues for Hermitian operators.
 
 All routines are written to work with standard `AbstractMatrix` types (e.g., Matrix, CuMatrix), but also the types from [LinearMaps.jl](https://julialinearalgebra.github.io/LinearMaps.jl/stable/), or more generally any type supporting
