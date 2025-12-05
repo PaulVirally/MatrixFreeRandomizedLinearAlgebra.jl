@@ -20,8 +20,7 @@ jobs:
           version: '1'
 
       - name: Install package + test dependencies
-        run: |
-          julia --project=. -e 'using Pkg; Pkg.develop(PackageSpec(path=".")); Pkg.instantiate()'
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Run tests with coverage
         uses: julia-actions/julia-runtest@v1
@@ -38,5 +37,3 @@ jobs:
         with:
           files: lcov.info
           fail_ci_if_error: true
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
