@@ -31,7 +31,7 @@ using MatrixFreeRandomizedLinearAlgebra
 
 A = randn(100, 50) # Some matrix we want to approximate
 target_rank = 10
-U, S, Vt = randomized_svd(A, target_rank) # Compute the randomized SVD
+U, S, Vt = rsvd(A, target_rank) # Compute the randomized SVD
 rel_norm = opnorm(A - U * Diagonal(S) * Vt) / opnorm(A) # Compute relative error
 println("Relative error of the approximation: ", rel_norm)
 ```
