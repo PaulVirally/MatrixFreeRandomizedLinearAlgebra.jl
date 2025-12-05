@@ -1,3 +1,5 @@
+[![Stable Docs](https://img.shields.io/badge/docs-stable-blue.svg)](https://paulvirally.github.io/MatrixFreeRandomizedLinearAlgebra.jl/stable)
+[![Dev Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://paulvirally.github.io/MatrixFreeRandomizedLinearAlgebra.jl/dev)
 [![Coverage Status](https://codecov.io/gh/PaulVirally/MatrixFreeRandomizedLinearAlgebra.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/PaulVirally/MatrixFreeRandomizedLinearAlgebra.jl)
 
 # MatrixFreeRandomizedLinearAlgebra.jl
