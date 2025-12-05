@@ -1,5 +1,5 @@
 using Documenter
-using MatrixFreeRandomizedLinearAlgebra  # your package
+using MatrixFreeRandomizedLinearAlgebra
 
 makedocs(
     sitename = "MatrixFreeRandomizedLinearAlgebra.jl",
