@@ -1,0 +1,42 @@
+name: Coverage
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@v1
+        with:
+          version: '1'
+
+      - name: Install package + test dependencies
+        run: |
+          julia --project=. -e 'using Pkg; Pkg.develop(PackageSpec(path=".")); Pkg.instantiate()'
+
+      - name: Run tests with coverage
+        uses: julia-actions/julia-runtest@v1
+        with:
+          coverage: true
+
+      - name: Process coverage (generate lcov.info)
+        uses: julia-actions/julia-processcoverage@v1
+        with:
+          directories: src
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: lcov.info
+          fail_ci_if_error: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
