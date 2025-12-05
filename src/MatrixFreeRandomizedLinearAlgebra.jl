@@ -22,6 +22,8 @@ arrays on a specific device (e.g. GPU vs CPU).
 """
 module MatrixFreeRandomizedLinearAlgebra
 
+include("common.jl")
+
 include("rsvd.jl")
 export rsvd, rsvdvals
 
