@@ -1,6 +1,6 @@
 name = "MatrixFreeRandomizedLinearAlgebra"
 uuid = "a69accfa-5557-4533-9d8b-afe141969680"
-version = "0.1.0"
+version = "0.1.1"
 license = "MIT"
 authors = ["Paul Virally <pvirally@gmail.com>"]
 
