@@ -1,6 +1,7 @@
 using CUDA
 using SparseArrays
 using LinearAlgebra
+using LinearMaps
 
 # Materialize function to ensure we have a concrete matrix type
 materialize_mat(A::CUDA.CuMatrix, target_prototype::AbstractArray) = A
@@ -14,10 +15,41 @@ function materialize_mat(A::AbstractSparseMatrix, target_prototype::AbstractArra
     B .= collect(A)
     return B
 end
+function materialize_mat(A::LinearMap, target_prototype::AbstractArray)
+    B = similar(target_prototype, eltype(A), size(A))
+    _, n = size(A)
+    v = similar(target_prototype, eltype(A), n)
+    @inbounds for i in 1:n
+        fill!(v, zero(eltype(A)))
+        CUDA.@allowscalar v[i] = one(eltype(A))
+        B[:, i] .= A * v
+    end
+    return B
+end
 function materialize_mat(A, target_prototype::AbstractArray)
     B = similar(target_prototype, eltype(A), size(A))
     try
         copyto!(B, A)
+        return B
+    catch
+    end
+    try
+        _, n = size(A)
+        @inbounds for i in 1:n
+            B[:, i] .= A[:, i]
+        end
+        return B
+    catch
+    end
+    try
+        B = similar(target_prototype, eltype(A), size(A))
+        _, n = size(A)
+        v = similar(target_prototype, eltype(A), n)
+        @inbounds for i in 1:n
+            fill!(v, zero(eltype(A)))
+            CUDA.@allowscalar v[j] = one(eltype(A))
+            B[:, i] .= A * v
+        end
         return B
     catch
     end
