@@ -17,6 +17,11 @@ end
 function materialize_mat(A, target_prototype::AbstractArray)
     B = similar(target_prototype, eltype(A), size(A))
     try
+        copyto!(B, A)
+        return B
+    catch
+    end
+    try
         m, n = size(A)
         @inbounds for j in 1:n
             for i in 1:m
