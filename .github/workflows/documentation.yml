@@ -22,6 +22,9 @@ jobs:
       - name: Cache Julia artifacts, packages and registry
         uses: julia-actions/cache@v2.1.0
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - uses: julia-actions/setup-julia@v2
         with:
           version: '1'
