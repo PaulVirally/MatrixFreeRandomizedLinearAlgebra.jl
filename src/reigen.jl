@@ -117,7 +117,13 @@ function eigen_hermitian_restricted(operator, Q, num_components::Int, sample_vec
     # Λ = Λ̃
     # V = Q * Ṽ
     B = Q' * (operator * Q) # B = Q' * A * Q
-    S = eigen!(Hermitian(materialize_mat(B, sample_vec))) # B = Ṽ * Λ̃ * Ṽ'
+    B = Hermitian(materialize_mat(B, sample_vec))
+    if sample_vec isa CuArray
+        # CUDA.jl does not support eigen! yet for these matrices
+        S = eigen(B) # B = Ṽ * Λ̃ * Ṽ'
+    else
+        S = eigen!(B) # B = Ṽ * Λ̃ * Ṽ'
+    end
     idxs = sortperm(S.values, rev=true) # Sort eigenvalues in descending order
     k = min(num_components, size(B, 1)) # In case num_components > rank(B), we limit to rank(B)
     evals = S.values[idxs][1:k] # Λ = Λ̃
@@ -127,7 +133,13 @@ end
 
 function eigvals_hermitian_restricted(operator, Q, num_components::Int, sample_vec::AbstractArray)
     B = Q' * (operator * Q) # B = Q' * A * Q
-    evals = eigvals!(Hermitian(materialize_mat(B, sample_vec))) # B = Ṽ * Λ̃ * Ṽ'
+    B = Hermitian(materialize_mat(B, sample_vec))
+    if sample_vec isa CuArray
+        # CUDA.jl does not support eigen! yet for these matrices
+        evals = eigen(B).values # B = Ṽ * Λ̃ * Ṽ'
+    else
+        evals = eigvals!(B) # B = Ṽ * Λ̃ * Ṽ'
+    end
     sort!(evals, rev=true) # Sort eigenvalues in descending order
     k = min(num_components, size(B, 1)) # In case num_components > rank(B), we limit to rank(B)
     return evals[1:k] # Λ = Λ̃
