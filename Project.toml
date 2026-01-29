@@ -6,16 +6,19 @@ authors = ["Paul Virally <pvirally@gmail.com>"]
 
 [deps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
-Coverage = "a2441757-f6aa-5fb2-8edb-039e3f45d037"
-Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LinearMaps = "7a12625a-238d-50fd-b39a-03d52299707e"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+
 [compat]
-CUDA = "5.9.5"
-Coverage = "1.8.1"
-Documenter = "1.16.1"
-LinearMaps = "3.11.4"
 julia = "1.11"
+CUDA = "5"
+LinearMaps = "3"
+
+[targets]
+test = ["Test"]
