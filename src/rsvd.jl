@@ -50,6 +50,12 @@ with `length(svd.S) == num_components` (or fewer is the effective numerical rank
 is smaller).
 """
 function rsvd(operator, num_components::Int; num_oversamples::Int=num_components, num_power_iterations::Int=(num_components < 0.1 * minimum(size(operator)) ? 7 : 4), sample_vec::AbstractArray=similar(operator, eltype(operator), 0))
+    if size(operator, 1) > size(operator, 2)
+        # For tall matrices, we can use the transpose to reduce work
+        svd_t = rsvd(operator', num_components; num_oversamples=num_oversamples, num_power_iterations=num_power_iterations, sample_vec=sample_vec)
+        return svd_t' # SVD type supports adjoint
+    end
+
     # We need to find an orthonormal matrix Q such that A ≈ Q * Q' * A (where A is the operator)
     num_samples = min(min(size(operator)...) , num_components + num_oversamples)
     Q = randomized_range_finder(operator, num_samples, num_power_iterations, sample_vec)
@@ -99,6 +105,11 @@ This can be significantly cheaper (in memory and computation) to use than
 [`rsvd`](@ref) when only singular values are needed.
 """
 function rsvdvals(operator, num_components::Int; num_oversamples::Int=num_components, num_power_iterations::Int=(num_components < 0.1 * minimum(size(operator)) ? 7 : 4), sample_vec::AbstractArray=similar(operator, eltype(operator), 0))
+    if size(operator, 1) > size(operator, 2)
+        # For tall matrices, we can use the transpose to reduce work
+        return rsvdvals(operator', num_components; num_oversamples=num_oversamples, num_power_iterations=num_power_iterations, sample_vec=sample_vec)
+    end
+
     # We need to find an orthonormal matrix Q such that A ≈ Q * Q' * A (where A is the operator)
     num_samples = min(min(size(operator)...) , num_components + num_oversamples)
     Q = randomized_range_finder(operator, num_samples, num_power_iterations, sample_vec)
