@@ -51,7 +51,8 @@ is smaller).
 """
 function rsvd(operator, num_components::Int; num_oversamples::Int=num_components, num_power_iterations::Int=(num_components < 0.1 * minimum(size(operator)) ? 7 : 4), sample_vec::AbstractArray=similar(operator, eltype(operator), 0))
     # We need to find an orthonormal matrix Q such that A ≈ Q * Q' * A (where A is the operator)
-    Q = randomized_range_finder(operator, num_components + num_oversamples, num_power_iterations, sample_vec)
+    num_samples = min(min(size(operator)...) , num_components + num_oversamples)
+    Q = randomized_range_finder(operator, num_samples, num_power_iterations, sample_vec)
     return svd_restricted(operator, Q, min(num_components, size(operator)...), sample_vec) # We use Q to compute the restricted SVD
 end
 
@@ -99,7 +100,8 @@ This can be significantly cheaper (in memory and computation) to use than
 """
 function rsvdvals(operator, num_components::Int; num_oversamples::Int=num_components, num_power_iterations::Int=(num_components < 0.1 * minimum(size(operator)) ? 7 : 4), sample_vec::AbstractArray=similar(operator, eltype(operator), 0))
     # We need to find an orthonormal matrix Q such that A ≈ Q * Q' * A (where A is the operator)
-    Q = randomized_range_finder(operator, num_components + num_oversamples, num_power_iterations, sample_vec)
+    num_samples = min(min(size(operator)...) , num_components + num_oversamples)
+    Q = randomized_range_finder(operator, num_samples, num_power_iterations, sample_vec)
     return svdvals_restricted(operator, Q, min(num_components, size(operator)...), sample_vec) # We use Q to compute the restricted SVD values
 end
 
