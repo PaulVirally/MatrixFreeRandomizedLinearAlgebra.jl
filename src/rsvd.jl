@@ -5,7 +5,7 @@ using Random
 """
     rsvd(operator, num_components; num_oversamples=num_components,
          num_power_iterations=(num_components < 0.1 * minimum(size(operator)) ? 7 : 4),
-         sample_vec=similar(operator, eltype(operator), 0))
+         sample_vec=similar(operator, eltype(operator), 0), seed_Q=nothing)
 
 Compute a randomized low-rank singular value decomposition (SVD) of a
 matrix-like linear operator.
@@ -38,6 +38,18 @@ matrix-free operators where forming a dense matrix is expensive.
   arrays are allocated on the same device/storage as `operator`. You can pass
   a vector living on a different device (e.g. a `CuVector`) to force all
   temporaries onto that device.
+- `seed_Q = nothing`:
+  Optional warm-start basis for the range finder. If you already have an
+  (approximately) orthonormal matrix whose columns span the range of `operator`
+  (column space), pass it here to seed the subspace iteration instead of
+  starting from pure Gaussian noise. It need not be perfectly orthonormal (it is
+  re-orthonormalized internally) and may have fewer columns than `num_components
+  + num_oversamples`, in which case it is padded with random columns. With
+  `num_power_iterations = 0` the seed is used essentially as-is (up to
+  re-orthonormalization).  Seeding is not supported for tall operators
+  (`size(operator, 1) > size(operator, 2)`), which are transposed internally.
+  For tall operators, the user is expected to transpose the operator themselves
+  and seed a basis for its (wide) range, or omit `seed_Q`.
 
 # Returns
 A `LinearAlgebra.SVD` object `svd` such that
@@ -49,23 +61,26 @@ svd.U * Diagonal(svd.S) * svd.Vt ≈ operator
 with `length(svd.S) == num_components` (or fewer is the effective numerical rank
 is smaller).
 """
-function rsvd(operator, num_components::Int; num_oversamples::Int=num_components, num_power_iterations::Int=(num_components < 0.1 * minimum(size(operator)) ? 7 : 4), sample_vec::AbstractArray=similar(operator, eltype(operator), 0))
+function rsvd(operator, num_components::Int; num_oversamples::Int=num_components, num_power_iterations::Int=(num_components < 0.1 * minimum(size(operator)) ? 7 : 4), sample_vec::AbstractArray=similar(operator, eltype(operator), 0), seed_Q=nothing)
     if size(operator, 1) > size(operator, 2)
-        # For tall matrices, we can use the transpose to reduce work
+        # For tall matrices, we can use the transpose to reduce work. This puts the
+        # range finder in a different space than the operator's column space, so a
+        # range seed cannot be threaded through and is not supported here.
+        seed_Q === nothing || throw(ArgumentError("seed_Q is not supported for tall operators (size(operator, 1) > size(operator, 2)) because rsvd transposes them internally; transpose the operator yourself and seed a basis for its (wide) range, or omit seed_Q"))
         svd_t = rsvd(operator', num_components; num_oversamples=num_oversamples, num_power_iterations=num_power_iterations, sample_vec=sample_vec)
         return svd_t' # SVD type supports adjoint
     end
 
     # We need to find an orthonormal matrix Q such that A ≈ Q * Q' * A (where A is the operator)
     num_samples = min(min(size(operator)...) , num_components + num_oversamples)
-    Q = randomized_range_finder(operator, num_samples, num_power_iterations, sample_vec)
+    Q = randomized_range_finder(operator, num_samples, num_power_iterations, sample_vec; seed_Q=seed_Q)
     return svd_restricted(operator, Q, min(num_components, size(operator)...), sample_vec) # We use Q to compute the restricted SVD
 end
 
 """
     rsvdvals(operator, num_components; num_oversamples=num_components,
              num_power_iterations=(num_components < 0.1 * minimum(size(operator)) ? 7 : 4),
-             sample_vec=similar(operator, eltype(operator), 0))
+             sample_vec=similar(operator, eltype(operator), 0), seed_Q=nothing)
 
 Compute the leading singualr values of a matrix-like poerator using randomized SVD techniques, without explcitly forming the singular vectors.
 
@@ -96,6 +111,16 @@ only returns the approximate singualr values.
   arrays are allocated on the same device/storage as `operator`. You can pass
   a vector living on a different device (e.g. a `CuVector`) to force all
   temporaries onto that device.
+- `seed_Q = nothing`:
+  Optional warm-start basis for the range finder. If you already have an
+  (approximately) orthonormal matrix whose columns span the range of `operator`
+  (column space), pass it here to seed the subspace iteration instead of
+  starting from pure Gaussian noise. It need not be perfectly orthonormal (it is
+  re-orthonormalized internally) and may have fewer columns than `num_components
+  + num_oversamples`, in which case it is padded with random columns. With
+  `num_power_iterations = 0` the seed is used essentially as-is.  Seeding is not
+  supported for tall operators (`size(operator, 1) > size(operator, 2)`). For
+  tall operators, the user is expected to transpose the operator themselves
 
 # Returns
 A vector of length `num_components` (or fewer if the effective numerical rank
@@ -104,15 +129,18 @@ is smaller) containing the leading singular values of `operator`.
 This can be significantly cheaper (in memory and computation) to use than
 [`rsvd`](@ref) when only singular values are needed.
 """
-function rsvdvals(operator, num_components::Int; num_oversamples::Int=num_components, num_power_iterations::Int=(num_components < 0.1 * minimum(size(operator)) ? 7 : 4), sample_vec::AbstractArray=similar(operator, eltype(operator), 0))
+function rsvdvals(operator, num_components::Int; num_oversamples::Int=num_components, num_power_iterations::Int=(num_components < 0.1 * minimum(size(operator)) ? 7 : 4), sample_vec::AbstractArray=similar(operator, eltype(operator), 0), seed_Q=nothing)
     if size(operator, 1) > size(operator, 2)
-        # For tall matrices, we can use the transpose to reduce work
+        # For tall matrices, we can use the transpose to reduce work. This puts the
+        # range finder in a different space than the operator's column space, so a
+        # range seed cannot be threaded through and is not supported here.
+        seed_Q === nothing || throw(ArgumentError("seed_Q is not supported for tall operators (size(operator, 1) > size(operator, 2)) because rsvdvals transposes them internally; transpose the operator yourself and seed a basis for its (wide) range, or omit seed_Q"))
         return rsvdvals(operator', num_components; num_oversamples=num_oversamples, num_power_iterations=num_power_iterations, sample_vec=sample_vec)
     end
 
     # We need to find an orthonormal matrix Q such that A ≈ Q * Q' * A (where A is the operator)
     num_samples = min(min(size(operator)...) , num_components + num_oversamples)
-    Q = randomized_range_finder(operator, num_samples, num_power_iterations, sample_vec)
+    Q = randomized_range_finder(operator, num_samples, num_power_iterations, sample_vec; seed_Q=seed_Q)
     return svdvals_restricted(operator, Q, min(num_components, size(operator)...), sample_vec) # We use Q to compute the restricted SVD values
 end
 
@@ -152,11 +180,32 @@ function qrthin!(A::CuMatrix)
     return Q, R
 end
 
-function randomized_range_finder(operator, num_samples::Int, num_power_iterations::Int, sample_vec::AbstractArray)
-    Ω = similar(sample_vec, eltype(operator), size(operator, 2), num_samples)
-    randn!(Ω) # Generate Gaussian random matrix
-    Q = operator * Ω
-    Q = qthin!(materialize_mat(Q, sample_vec))
+# Build the (orthonormalized) starting block for a randomized range finder.
+# Without a seed, the block is `operator * Ω` for a Gaussian random `Ω`, exactly
+# as before. When `seed_Q` is provided, its columns seed the block (a warm
+# start); any shortfall up to `num_samples` columns is padded with `operator * Ω`
+# so oversampling is preserved. The result lives on `sample_vec`'s device.
+function range_finder_start(operator, num_samples::Int, sample_vec::AbstractArray, seed_Q)
+    if seed_Q === nothing
+        Ω = similar(sample_vec, eltype(operator), size(operator, 2), num_samples)
+        randn!(Ω) # Generate Gaussian random matrix
+        return qthin!(materialize_mat(operator * Ω, sample_vec))
+    end
+    size(seed_Q, 1) == size(operator, 1) || throw(DimensionMismatch("seed_Q has $(size(seed_Q, 1)) rows but the operator range has dimension $(size(operator, 1))"))
+    s = size(seed_Q, 2)
+    num_cols = max(num_samples, s) # Keep all seed columns even if there are more than requested
+    Y = similar(sample_vec, eltype(operator), size(operator, 1), num_cols)
+    copyto!(view(Y, :, 1:s), seed_Q) # Seed the leading columns (handles CPU↔GPU placement)
+    if num_cols > s
+        Ω = similar(sample_vec, eltype(operator), size(operator, 2), num_cols - s)
+        randn!(Ω) # Pad with Gaussian random columns to preserve oversampling
+        copyto!(view(Y, :, s+1:num_cols), materialize_mat(operator * Ω, sample_vec))
+    end
+    return qthin!(materialize_mat(Y, sample_vec))
+end
+
+function randomized_range_finder(operator, num_samples::Int, num_power_iterations::Int, sample_vec::AbstractArray; seed_Q=nothing)
+    Q = range_finder_start(operator, num_samples, sample_vec, seed_Q)
     for i in 1:num_power_iterations # Compute power iterations
         Q = qthin!(materialize_mat(operator' * Q, sample_vec))
         Q = qthin!(materialize_mat(operator * Q, sample_vec))

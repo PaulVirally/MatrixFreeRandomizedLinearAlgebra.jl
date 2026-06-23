@@ -67,4 +67,36 @@ using CUDA
         λ_ref = sort(E_full.values; rev=true)[1:k]
         @test isapprox(E_approx.values, λ_ref; rtol=2e-2, atol=2e-2)
     end
+
+    @testset "seed_Q warm start" begin
+        Random.seed!(0xdeadbeef)
+        n, k = 40, 6
+        A = randn(n, n)
+        A = (A + A') / 2
+
+        E_full = eigen(Hermitian(A))
+        idx = sortperm(E_full.values; rev=true)
+        λ_ref = E_full.values[idx][1:k]
+
+        # Warm start from a first solve's eigenvectors
+        E1 = reigen_hermitian(A, k; num_oversamples=20, num_power_iterations=6)
+        E2 = reigen_hermitian(A, k; num_oversamples=20, num_power_iterations=6, seed_Q=E1.vectors)
+        @test length(E2.values) == k
+        @test size(E2.vectors) == (n, k)
+        @test isapprox(E2.values, λ_ref; rtol=1e-2, atol=1e-2)
+
+        # Near-exact seed (true eigenvectors) needs no power iterations
+        seed = E_full.vectors[:, idx[1:k+5]]
+        E3 = reigen_hermitian(A, k; num_oversamples=20, num_power_iterations=0, seed_Q=seed)
+        @test isapprox(E3.values, λ_ref; rtol=1e-2, atol=1e-2)
+
+        # Partial seed is padded with random columns
+        seed_partial = E_full.vectors[:, idx[1:3]]
+        E4 = reigen_hermitian(A, k; num_oversamples=20, num_power_iterations=4, seed_Q=seed_partial)
+        @test length(E4.values) == k
+        @test isapprox(E4.values, λ_ref; rtol=1e-2, atol=1e-2)
+
+        # Wrong number of rows throws
+        @test_throws DimensionMismatch reigen_hermitian(A, k; seed_Q=randn(n + 1, k))
+    end
 end # @testset "reigen_hermitian tests"

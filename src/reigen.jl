@@ -6,7 +6,7 @@ using Random
     reigen_hermitian(operator, num_components;
                      num_oversamples=num_components,
                      num_power_iterations=(num_components < 0.1 * minimum(size(operator)) ? 14 : 8),
-                     sample_vec=similar(operator, eltype(operator), 0))
+                     sample_vec=similar(operator, eltype(operator), 0), seed_Q=nothing)
 
 Compute a randomized eigendecomposition of a Hermitian matrix-like operator.
 
@@ -30,6 +30,16 @@ computes the exact eigendecomposition of `operator` restricted to that subspace.
 - `sample_vec::AbstractVector`:
   Prototype vector used for allocating random test matrices. Controls whether
   temporaries live on CPU or GPU.
+- `seed_Q = nothing`:
+  Optional warm-start basis for the range finder. If you already have an
+  (approximately) orthonormal matrix whose columns span the invariant subspace
+  of `operator`, pass it here to seed the subspace iteration instead of starting
+  from pure Gaussian noise. This is useful when refining a previous solve or
+  marching a parameter/time step. `seed_Q` does not have to be perfectly
+  orthonormal (it is re-orthonormalized internally) and may have fewer columns
+  than `num_components + num_oversamples`, in which case it is padded with
+  random columns. With `num_power_iterations = 0` the seed is used essentially
+  as-is (up to re-orthonormalization).
 
 # Returns
 An `Eigen` object `E` such that
@@ -41,9 +51,9 @@ operator * E.vectors ≈ E.vectors * Diagonal(E.values)
 with `length(E.values) == num_components` (or fewer if the effective numerical rank
 is smaller). Eigenvalues are sorted in descending order.
 """
-function reigen_hermitian(operator, num_components::Int; num_oversamples::Int=num_components, num_power_iterations::Int=(num_components < 0.1 * minimum(size(operator)) ? 14 : 8), sample_vec::AbstractArray=similar(operator, eltype(operator), 0))
+function reigen_hermitian(operator, num_components::Int; num_oversamples::Int=num_components, num_power_iterations::Int=(num_components < 0.1 * minimum(size(operator)) ? 14 : 8), sample_vec::AbstractArray=similar(operator, eltype(operator), 0), seed_Q=nothing)
     # We need to find an orthonormal matrix Q such that A ≈ Q * Q' * A (where A is the operator)
-    Q = randomized_hermitian_range_finder(operator, num_components + num_oversamples, num_power_iterations, sample_vec)
+    Q = randomized_hermitian_range_finder(operator, num_components + num_oversamples, num_power_iterations, sample_vec; seed_Q=seed_Q)
     return eigen_hermitian_restricted(operator, Q, min(num_components, size(operator)...), sample_vec) # We use Q to compute the restricted spectral decomposition
 end
 
@@ -51,7 +61,7 @@ end
     reigvals_hermitian(operator, num_components;
                       num_oversamples=num_components,
                       num_power_iterations=(num_components < 0.1 * minimum(size(operator)) ? 14 : 8),
-                      sample_vec=similar(operator, eltype(operator), 0))
+                      sample_vec=similar(operator, eltype(operator), 0), seed_Q=nothing)
 
 Compute approximate leading eigenvalues of a Hermitian matrix-like operator.
 
@@ -75,6 +85,15 @@ eigenvalues of `operator` restricted to that subspace.
 - `sample_vec::AbstractVector`:
     Prototype vector used for allocating random test matrices. Controls whether
     temporaries live on CPU or GPU.
+- `seed_Q = nothing`:
+    Optional warm-start basis for the range finder. If you already have an
+    (approximately) orthonormal matrix whose columns span the invariant subspace
+    of `operator`, pass it here to seed the subspace iteration instead of
+    starting from pure Gaussian noise. It does not be perfectly orthonormal (it
+    is re-orthonormalized internally) and may have fewer columns than
+    `num_components + num_oversamples`, in which case it is padded with random
+    columns. With `num_power_iterations = 0` the seed is used essentially as-is
+    (up to re-orthonormalization).
 
 # Returns
 A vector of approximate leading eigenvalues `evals` such that
@@ -89,17 +108,14 @@ for the corresponding eigenvector `v` (not returned here), with `length(evals) =
 This can be significantly cheaper than [`reigen_hermitian`](@ref) if only
 eigenvalues are needed.
 """
-function reigvals_hermitian(operator, num_components::Int; num_oversamples::Int=num_components, num_power_iterations::Int=(num_components < 0.1 * minimum(size(operator)) ? 14 : 8), sample_vec::AbstractArray=similar(operator, eltype(operator), 0))
+function reigvals_hermitian(operator, num_components::Int; num_oversamples::Int=num_components, num_power_iterations::Int=(num_components < 0.1 * minimum(size(operator)) ? 14 : 8), sample_vec::AbstractArray=similar(operator, eltype(operator), 0), seed_Q=nothing)
     # We need to find an orthonormal matrix Q such that A ≈ Q * Q' * A (where A is the operator)
-    Q = randomized_hermitian_range_finder(operator, num_components + num_oversamples, num_power_iterations, sample_vec)
+    Q = randomized_hermitian_range_finder(operator, num_components + num_oversamples, num_power_iterations, sample_vec; seed_Q=seed_Q)
     return eigvals_hermitian_restricted(operator, Q, min(num_components, size(operator)...), sample_vec) # We use Q to compute the restricted spectral values
 end
 
-function randomized_hermitian_range_finder(operator, num_samples::Int, num_power_iterations::Int, sample_vec::AbstractArray)
-    Ω = similar(sample_vec, eltype(operator), size(operator, 2), num_samples)
-    randn!(Ω) # Generate Gaussian random matrix
-    Q = operator * Ω
-    Q = qthin!(materialize_mat(Q, sample_vec))
+function randomized_hermitian_range_finder(operator, num_samples::Int, num_power_iterations::Int, sample_vec::AbstractArray; seed_Q=nothing)
+    Q = range_finder_start(operator, num_samples, sample_vec, seed_Q)
     for i in 1:num_power_iterations # Compute power iterations
         Q = qthin!(materialize_mat(operator * Q, sample_vec))
     end

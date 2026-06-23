@@ -19,6 +19,11 @@ All routines are written to work with standard `AbstractMatrix` types (e.g., Mat
 
 You can optionally pass a `sample_vec` prototype to place all temporary work
 arrays on a specific device (e.g. GPU vs CPU).
+
+All routines also accept an optional `seed_Q` keyword: a pre-computed
+(approximately) orthonormal basis for the range of the operator, used to
+warm-start the range finder. This is useful when refining a previous solve or
+sweeping a parameter/time step, where a good basis is already known.
 """
 module MatrixFreeRandomizedLinearAlgebra
 

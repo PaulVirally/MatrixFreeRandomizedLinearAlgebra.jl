@@ -33,3 +33,23 @@ U, S, Vt = rsvd(A, target_rank) # Compute the randomized SVD
 rel_norm = opnorm(A - U * Diagonal(S) * Vt) / opnorm(A) # Compute relative error
 println("Relative error of the approximation: ", rel_norm)
 ```
+
+### Warm-starting with a pre-computed basis
+
+Every routine accepts an optional `seed_Q` keyword: an (approximately)
+orthonormal basis that already spans the range of the operator. Passing it
+warm-starts the range finder instead of drawing a fresh random sketch, which is
+handy when refining a previous solve or sweeping a parameter/time step. The seed
+is re-orthonormalized internally and may have fewer columns than the sketch size
+(it is padded with random columns), so a rough guess is fine.
+
+```julia
+using MatrixFreeRandomizedLinearAlgebra
+
+A = randn(200, 200); A = A + A' # A Hermitian operator
+δ = randn(200, 200); δ = 1e-3 * (δ + δ') # A small Hermitian perturbation
+k = 10
+
+E1 = reigen_hermitian(A, k)                         # First solve
+E2 = reigen_hermitian(A + δ, k; seed_Q = E1.vectors) # Warm start from E1's basis
+```

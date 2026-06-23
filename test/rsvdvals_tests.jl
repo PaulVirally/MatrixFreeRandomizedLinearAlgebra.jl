@@ -62,4 +62,36 @@ using CUDA
             @info "Skipping rsvdvals CUDA tests: CUDA not functional on this system"
         end
     end
+
+    @testset "seed_Q warm start" begin
+        Random.seed!(0xdeadbeef)
+        m, n, k = 30, 50, 5 # wide so rsvdvals does not transpose internally
+        A = randn(m, n)
+        s_full = svdvals(A)
+
+        # Warm start from a first solve's left singular vectors
+        svd1 = rsvd(A, k; num_oversamples=10, num_power_iterations=3)
+        s2 = rsvdvals(A, k; num_oversamples=10, num_power_iterations=3, seed_Q=svd1.U)
+        @test length(s2) == k
+        @test isapprox(s2, s_full[1:k]; rtol=1e-2, atol=1e-2)
+
+        # Near-exact seed needs no power iterations
+        F = svd(A)
+        seed = F.U[:, 1:k+5]
+        s3 = rsvdvals(A, k; num_oversamples=10, num_power_iterations=0, seed_Q=seed)
+        @test isapprox(s3, s_full[1:k]; rtol=1e-2, atol=1e-2)
+
+        # Partial seed is padded with random columns
+        seed_partial = F.U[:, 1:3]
+        s4 = rsvdvals(A, k; num_oversamples=10, num_power_iterations=2, seed_Q=seed_partial)
+        @test length(s4) == k
+        @test isapprox(s4, s_full[1:k]; rtol=1e-2, atol=1e-2)
+
+        # Wrong number of rows throws
+        @test_throws DimensionMismatch rsvdvals(A, k; seed_Q=randn(m + 1, k))
+
+        # Seeding a tall operator is not supported
+        A_tall = randn(n, m)
+        @test_throws ArgumentError rsvdvals(A_tall, k; seed_Q=randn(n, k))
+    end
 end # @testset "rsvdvals tests"
