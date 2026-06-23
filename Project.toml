@@ -11,14 +11,21 @@ LinearMaps = "7a12625a-238d-50fd-b39a-03d52299707e"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
-[extras]
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
-
 [compat]
-julia = "1.11"
+Aqua = "0.8"
 CUDA = "5"
+Documenter = "1"
+LinearAlgebra = "1"
 LinearMaps = "3"
+Random = "1"
+SparseArrays = "1"
+Test = "1"
+julia = "1.11"
+
+[extras]
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test"]
+test = ["Aqua", "Test"]
