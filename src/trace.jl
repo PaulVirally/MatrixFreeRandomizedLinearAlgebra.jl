@@ -173,8 +173,6 @@ cnormc(M) = M ./ sqrt.(sum(abs2, M; dims=1)) # normalize each column to unit nor
 colnorm(M) = vec(sqrt.(sum(abs2, M; dims=1))) # 2-norm of each column
 diag_prod(A, B) = vec(sum(conj.(A) .* B; dims=1)) # diagonal of A' * B
 
-to_host(A) = Array(A) # bring a (small) reduced block to the CPU for dense work
-
 # Draw m sphere-normalized Gaussian test vectors, Ω = sqrt(n) * cnormc(randn).
 # XTrace's variance-reduction formulas assume isotropic columns, so this differs
 # from the Rademacher vectors used by Hutchinson.

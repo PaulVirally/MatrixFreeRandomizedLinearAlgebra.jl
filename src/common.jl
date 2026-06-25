@@ -3,6 +3,8 @@ using SparseArrays
 using LinearAlgebra
 using LinearMaps
 
+to_host(A) = Array(A) # bring a (small) reduced block to the CPU for dense work
+
 # Materialize function to ensure we have a concrete matrix type
 materialize_mat(A::CUDA.CuMatrix, target_prototype::AbstractArray) = A
 materialize_mat(A::Adjoint{T,S}, target_prototype::AbstractArray) where {T,S<:CUDA.CuMatrix} = CUDA.CuMatrix(A)
@@ -63,6 +65,6 @@ function materialize_mat(A, target_prototype::AbstractArray)
         return B
     catch
     end
-    B .= Array(A)
+    B .= to_host(A)
     return B
 end
