@@ -10,6 +10,8 @@ This module provides:
     oversampling.
     * [`reigen_hermitian`](@ref) / [`reigvals_hermitian`](@ref): randomized
     eigen-decomposition and eigenvalues for Hermitian operators.
+    * [`trace`](@ref): stochastic trace estimation (XTrace, or streaming
+    Hutchinson for the low-memory case).
 
 All routines are written to work with standard `AbstractMatrix` types (e.g., Matrix, CuMatrix), but also the types from [LinearMaps.jl](https://julialinearalgebra.github.io/LinearMaps.jl/stable/), or more generally any type supporting
 
@@ -34,5 +36,8 @@ export rsvd, rsvdvals
 
 include("reigen.jl")
 export reigen_hermitian, reigvals_hermitian
+
+include("trace.jl")
+export trace
 
 end # module MatrixFreeRandomizedLinearAlgebra

@@ -36,9 +36,31 @@ rel_norm = opnorm(A - U * Diagonal(S) * Vt) / opnorm(A) # Compute relative error
 println("Relative error of the approximation: ", rel_norm)
 ```
 
+### Estimating the trace
+
+Use [`trace`](@ref) to estimate `tr(A)` of a square operator without forming it.
+By default it uses XTrace, which is accurate for operators with some spectral
+decay. For operators so large that even a small sketch will not fit in memory,
+pass `low_mem=true` to fall back to the streaming Hutchinson estimator. The
+sample budget can be a fixed count or a target relative error.
+
+```julia
+using MatrixFreeRandomizedLinearAlgebra
+
+A = randn(500, 500)
+
+t = trace(A, 50)                       # XTrace with 50 test vectors
+t = trace(A; relative_tolerance=1e-2)  # XTrace, refined until the error is small
+t = trace(A, 2000; low_mem=true)       # streaming Hutchinson, 2000 matvecs
+
+# Ask for the estimated standard error alongside the value
+res = trace(A; relative_tolerance=1e-2, return_error=true)
+println("trace ≈ ", res.value, " ± ", res.error)
+```
+
 ### Warm-starting with a pre-computed basis
 
-Every routine accepts an optional `seed_Q` keyword: an (approximately)
+Every decomposition routine accepts an optional `seed_Q` keyword: an (approximately)
 orthonormal basis that already spans the range of the operator. Passing it
 warm-starts the range finder instead of drawing a fresh random sketch, which is
 handy when refining a previous solve or sweeping a parameter/time step. The seed
