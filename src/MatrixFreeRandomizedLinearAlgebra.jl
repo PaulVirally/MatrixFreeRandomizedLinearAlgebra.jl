@@ -31,6 +31,8 @@ module MatrixFreeRandomizedLinearAlgebra
 
 include("common.jl")
 
+include("range_finder.jl")
+
 include("rsvd.jl")
 export rsvd, rsvdvals
 

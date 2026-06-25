@@ -184,14 +184,15 @@ function sphere_test_matrix(operator, m::Integer, sample_vec::AbstractArray)
     return sqrt(real(T)(n)) .* cnormc(Ω)
 end
 
-# Core XTrace estimate from a test matrix Ω and its image Y = operator * Ω. This
-# is a port of xtrace_helper.m (the "improved" branch) from Epperly, Tropp and
-# Webber. randomized_range_finder is intentionally not reused here: XTrace needs
-# the R factor and the raw Ω, not just Q, so it calls qrthin! directly.
-function xtrace_estimate(operator, Ω, Y, sample_vec::AbstractArray)
+# Core XTrace estimate from a test matrix Ω and the thin-QR factors Q, R of its
+# image operator * Ω. This is a port of xtrace_helper.m (the "improved" branch)
+# from Epperly, Tropp and Webber. The full randomized_range_finder is not reused:
+# XTrace is a zero-power-iteration sketch that needs the R factor and the raw Ω,
+# so the callers build (Q, R) via `sketch(...; return_R=true)` (or qrthin! on a
+# reused image) and pass them in here.
+function xtrace_estimate(operator, Ω, Q, R, sample_vec::AbstractArray)
     n = size(operator, 1)
     m = size(Ω, 2)
-    Q, R = qrthin!(copy(materialize_mat(Y, sample_vec))) # copy so Y survives for adaptive reuse
     Z = materialize_mat(operator * Q, sample_vec)
 
     # The reduced blocks are m x m and tiny; finish on the host with dense LAPACK,
@@ -222,8 +223,8 @@ function xtrace_fixed(operator, num_samples::Integer, sample_vec::AbstractArray)
     n = size(operator, 1)
     m = clamp(num_samples, 2, n) # XTrace needs at least 2, and at most n, test vectors
     Ω = sphere_test_matrix(operator, m, sample_vec)
-    Y = materialize_mat(operator * Ω, sample_vec)
-    return xtrace_estimate(operator, Ω, Y, sample_vec)
+    Q, R = sketch(operator, Ω, sample_vec; return_R=true)
+    return xtrace_estimate(operator, Ω, Q, R, sample_vec)
 end
 
 function xtrace_adaptive(operator, relative_tolerance::Real, max_samples::Integer, sample_vec::AbstractArray)
@@ -232,7 +233,8 @@ function xtrace_adaptive(operator, relative_tolerance::Real, max_samples::Intege
     m = clamp(10, 2, n) # initial sketch size
     Ω = sphere_test_matrix(operator, m, sample_vec)
     Y = materialize_mat(operator * Ω, sample_vec)
-    t, err = xtrace_estimate(operator, Ω, Y, sample_vec)
+    Q, R = qrthin!(copy(Y)) # copy so Y survives for adaptive reuse
+    t, err = xtrace_estimate(operator, Ω, Q, R, sample_vec)
     while err > relative_tolerance * abs(t) && m < cap
         add = min(m, cap - m) # double the sketch, capped
         Ωnew = sphere_test_matrix(operator, add, sample_vec)
@@ -240,7 +242,8 @@ function xtrace_adaptive(operator, relative_tolerance::Real, max_samples::Intege
         Ω = hcat(Ω, Ωnew) # reuse the existing operator * Ω products
         Y = hcat(Y, Ynew)
         m += add
-        t, err = xtrace_estimate(operator, Ω, Y, sample_vec)
+        Q, R = qrthin!(copy(Y)) # copy so Y survives for adaptive reuse
+        t, err = xtrace_estimate(operator, Ω, Q, R, sample_vec)
     end
     return t, err
 end

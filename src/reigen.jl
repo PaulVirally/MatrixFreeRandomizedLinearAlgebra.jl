@@ -53,7 +53,7 @@ is smaller). Eigenvalues are sorted in descending order.
 """
 function reigen_hermitian(operator, num_components::Int; num_oversamples::Int=num_components, num_power_iterations::Int=(num_components < 0.1 * minimum(size(operator)) ? 14 : 8), sample_vec::AbstractArray=similar(operator, eltype(operator), 0), seed_Q=nothing)
     # We need to find an orthonormal matrix Q such that A ≈ Q * Q' * A (where A is the operator)
-    Q = randomized_hermitian_range_finder(operator, num_components + num_oversamples, num_power_iterations, sample_vec; seed_Q=seed_Q)
+    Q = randomized_range_finder(operator, num_components + num_oversamples, num_power_iterations, sample_vec; hermitian=true, seed_Q=seed_Q)
     return eigen_hermitian_restricted(operator, Q, min(num_components, size(operator)...), sample_vec) # We use Q to compute the restricted spectral decomposition
 end
 
@@ -110,16 +110,8 @@ eigenvalues are needed.
 """
 function reigvals_hermitian(operator, num_components::Int; num_oversamples::Int=num_components, num_power_iterations::Int=(num_components < 0.1 * minimum(size(operator)) ? 14 : 8), sample_vec::AbstractArray=similar(operator, eltype(operator), 0), seed_Q=nothing)
     # We need to find an orthonormal matrix Q such that A ≈ Q * Q' * A (where A is the operator)
-    Q = randomized_hermitian_range_finder(operator, num_components + num_oversamples, num_power_iterations, sample_vec; seed_Q=seed_Q)
+    Q = randomized_range_finder(operator, num_components + num_oversamples, num_power_iterations, sample_vec; hermitian=true, seed_Q=seed_Q)
     return eigvals_hermitian_restricted(operator, Q, min(num_components, size(operator)...), sample_vec) # We use Q to compute the restricted spectral values
-end
-
-function randomized_hermitian_range_finder(operator, num_samples::Int, num_power_iterations::Int, sample_vec::AbstractArray; seed_Q=nothing)
-    Q = range_finder_start(operator, num_samples, sample_vec, seed_Q)
-    for i in 1:num_power_iterations # Compute power iterations
-        Q = qthin!(materialize_mat(operator * Q, sample_vec))
-    end
-    return Q
 end
 
 function eigen_hermitian_restricted(operator, Q, num_components::Int, sample_vec::AbstractArray)
