@@ -50,6 +50,11 @@ operator * E.vectors ≈ E.vectors * Diagonal(E.values)
 
 with `length(E.values) == num_components` (or fewer if the effective numerical rank
 is smaller). Eigenvalues are sorted in descending order.
+
+# References
+- N. Halko, P. G. Martinsson, and J. A. Tropp, "Finding Structure with
+  Randomness: Probabilistic Algorithms for Constructing Approximate Matrix
+  Decompositions", SIAM Review 53(2), 2011 (arXiv:0909.4061).
 """
 function reigen_hermitian(operator, num_components::Int; num_oversamples::Int=num_components, num_power_iterations::Int=(num_components < 0.1 * minimum(size(operator)) ? 14 : 8), sample_vec::AbstractArray=similar(operator, eltype(operator), 0), seed_Q=nothing)
     # We need to find an orthonormal matrix Q such that A ≈ Q * Q' * A (where A is the operator)

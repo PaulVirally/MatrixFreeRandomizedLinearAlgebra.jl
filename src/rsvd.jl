@@ -60,6 +60,11 @@ svd.U * Diagonal(svd.S) * svd.Vt ≈ operator
 
 with `length(svd.S) == num_components` (or fewer is the effective numerical rank
 is smaller).
+
+# References
+- N. Halko, P. G. Martinsson, and J. A. Tropp, "Finding Structure with
+  Randomness: Probabilistic Algorithms for Constructing Approximate Matrix
+  Decompositions", SIAM Review 53(2), 2011 (arXiv:0909.4061).
 """
 function rsvd(operator, num_components::Int; num_oversamples::Int=num_components, num_power_iterations::Int=(num_components < 0.1 * minimum(size(operator)) ? 7 : 4), sample_vec::AbstractArray=similar(operator, eltype(operator), 0), seed_Q=nothing)
     if size(operator, 1) > size(operator, 2)
