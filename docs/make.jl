@@ -6,7 +6,11 @@ makedocs(
     format = Documenter.HTML(),
     pages = [
         "Home" => "index.md",
+        "What is matrix-free?" => "matrix_free.md",
+        "Algorithms" => "algorithms.md",
+        "Examples" => "examples.md",
         "API" => "api.md",
+        "References" => "references.md",
     ],
 )
 

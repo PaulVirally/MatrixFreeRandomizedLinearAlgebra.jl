@@ -1,55 +1,66 @@
-[![Stable Docs](https://img.shields.io/badge/docs-stable-blue.svg)](https://paulvirally.github.io/MatrixFreeRandomizedLinearAlgebra.jl/stable)
-[![Dev Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://paulvirally.github.io/MatrixFreeRandomizedLinearAlgebra.jl/dev)
-[![Coverage Status](https://codecov.io/gh/PaulVirally/MatrixFreeRandomizedLinearAlgebra.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/PaulVirally/MatrixFreeRandomizedLinearAlgebra.jl)
-
 # MatrixFreeRandomizedLinearAlgebra.jl
 
-`MatrixFreeRandomizedLinearAlgebra.jl` is a Julia package that provides
-efficient implementations of randomized algorithms for linear algebra tasks,
-such as matrix approximations and singular value decompositions. The package is
-designed to work with large-scale matrices in a matrix-free manner, meaning that
-it does not require explicit storage of the entire matrix.
+[![Stable Docs](https://img.shields.io/badge/docs-stable-blue.svg)](https://paulvirally.github.io/MatrixFreeRandomizedLinearAlgebra.jl/stable)
+[![Dev Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://paulvirally.github.io/MatrixFreeRandomizedLinearAlgebra.jl/dev)
+[![CI](https://github.com/PaulVirally/MatrixFreeRandomizedLinearAlgebra.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/PaulVirally/MatrixFreeRandomizedLinearAlgebra.jl/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/PaulVirally/MatrixFreeRandomizedLinearAlgebra.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/PaulVirally/MatrixFreeRandomizedLinearAlgebra.jl)
+[![Aqua](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
+[![PkgVersion](https://juliahub.com/docs/General/MatrixFreeRandomizedLinearAlgebra/stable/version.svg)](https://juliahub.com/ui/Packages/General/MatrixFreeRandomizedLinearAlgebra)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+Randomized algorithms for the top singular values, eigenvalues, and the trace of
+a linear operator, without building the matrix.
+
+If you can multiply your operator by a vector (and, for some of these, by its
+adjoint), you can use it here: dense or sparse matrices, GPU arrays,
+[`LinearMaps.jl`](https://github.com/JuliaLinearAlgebra/LinearMaps.jl) operators,
+or any type that defines `size` and `*`. The methods are randomized
+approximations from Halko, Martinsson, and Tropp. They are most useful when the
+operator is large, a matrix-vector product is cheap, and you only need a low-rank
+piece of it, which is the case where a full dense factorization is too slow or
+doesn't fit in memory.
+
+<p align="center">
+  <img src="docs/src/assets/performance.png" width="48%" alt="Runtime: dense vs matrix-free"/>
+  <img src="docs/src/assets/rsvd_spectrum.png" width="48%" alt="Recovered vs exact singular values"/>
+</p>
+
+Left: time to compute the leading singular values of a matrix-free 2D blur
+operator, dense versus this package. Right: the values it returns sit on top of
+the exact spectrum. Both plots come from the scripts in [`examples/`](examples).
+
+## What's here
+
+- `rsvd` / `rsvdvals`: randomized SVD and singular values for general (possibly
+  rectangular) operators.
+- `reigen_hermitian` / `reigvals_hermitian`: randomized eigendecomposition and
+  eigenvalues for Hermitian operators.
+- `trace`: stochastic trace estimation. XTrace by default, or a streaming
+  Hutchinson estimator when memory is tight.
+
+All of it runs on CPU or GPU arrays, and the decomposition routines take a
+`seed_Q` keyword if you already have a basis to start from.
 
 ## Installation
-
-You can install `MatrixFreeRandomizedLinearAlgebra.jl` using Julia's package
-manager:
 
 ```julia
 ] add MatrixFreeRandomizedLinearAlgebra
 ```
 
-## Usage Example
-
-Below is a simple example of how to use `MatrixFreeRandomizedLinearAlgebra.jl`
-to compute a randomized SVD of a matrix:
+## Quick example
 
 ```julia
-using MatrixFreeRandomizedLinearAlgebra
+using MatrixFreeRandomizedLinearAlgebra, LinearAlgebra
 
-A = randn(100, 50) # Some matrix we want to approximate
-target_rank = 10
-U, S, Vt = rsvd(A, target_rank) # Compute the randomized SVD
-rel_norm = opnorm(A - U * Diagonal(S) * Vt) / opnorm(A) # Compute relative error
-println("Relative error of the approximation: ", rel_norm)
+A = randn(100, 50)            # any operator with size, *, and '
+U, S, Vt = rsvd(A, 10)        # rank-10 randomized SVD
+rel = opnorm(A - U * Diagonal(S) * Vt) / opnorm(A)
+println("relative error: ", rel)
 ```
 
-### Warm-starting with a pre-computed basis
+## Learn more
 
-Every routine accepts an optional `seed_Q` keyword: an (approximately)
-orthonormal basis that already spans the range of the operator. Passing it
-warm-starts the range finder instead of drawing a fresh random sketch, which is
-handy when refining a previous solve or sweeping a parameter/time step. The seed
-is re-orthonormalized internally and may have fewer columns than the sketch size
-(it is padded with random columns), so a rough guess is fine.
-
-```julia
-using MatrixFreeRandomizedLinearAlgebra
-
-A = randn(200, 200); A = A + A' # A Hermitian operator
-δ = randn(200, 200); δ = 1e-3 * (δ + δ') # A small Hermitian perturbation
-k = 10
-
-E1 = reigen_hermitian(A, k)                         # First solve
-E2 = reigen_hermitian(A + δ, k; seed_Q = E1.vectors) # Warm start from E1's basis
-```
+- [Documentation](https://paulvirally.github.io/MatrixFreeRandomizedLinearAlgebra.jl/stable):
+  what matrix-free means, how the algorithms work, and the API reference.
+- [`examples/`](examples): runnable scripts that compare accuracy and runtime
+  against dense references. They generate the plots above.
