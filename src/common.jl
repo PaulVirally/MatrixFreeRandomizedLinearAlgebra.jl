@@ -36,8 +36,19 @@ function materialize_mat(A::AbstractMatrix, prototype::AbstractArray)
 end
 
 # A `LinearMap` is an `AbstractMatrix`, but `copyto!` into a dense array is not
-# defined for it, so we apply the operator instead (see `_materialize_via_matmul`).
-materialize_mat(A::LinearMap, prototype::AbstractArray) = _materialize_via_matmul(A, prototype)
+# defined for it. Multiplying it by a dense matrix (`A * E`, below) would build a
+# *lazy* `CompositeMap` rather than evaluating the product, so we use `mul!` to
+# read all of its columns into a dense buffer at once. The identity and the
+# output live on the prototype's device, so the product lands there too.
+function materialize_mat(A::LinearMap, prototype::AbstractArray)
+    T = eltype(A)
+    m, n = size(A)
+    E = similar(prototype, T, n, n)
+    copyto!(E, Diagonal(fill!(similar(prototype, T, n), one(T)))) # dense identity, no scalar indexing
+    B = similar(prototype, T, m, n)
+    mul!(B, A, E) # eager: evaluates the operator columnwise into B
+    return B
+end
 
 # A bare matrix-free operator that only knows its `size` and how to multiply. We
 # materialize it with a single matrix product against the identity rather than one
