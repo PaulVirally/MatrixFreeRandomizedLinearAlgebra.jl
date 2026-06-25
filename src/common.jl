@@ -5,66 +5,52 @@ using LinearMaps
 
 to_host(A) = Array(A) # bring a (small) reduced block to the CPU for dense work
 
-# Materialize function to ensure we have a concrete matrix type
-materialize_mat(A::CUDA.CuMatrix, target_prototype::AbstractArray) = A
-materialize_mat(A::Adjoint{T,S}, target_prototype::AbstractArray) where {T,S<:CUDA.CuMatrix} = CUDA.CuMatrix(A)
-materialize_mat(A::Transpose{T,S}, target_prototype::AbstractArray) where {T,S<:CUDA.CuMatrix} = CUDA.CuMatrix(A)
-materialize_mat(A::StridedMatrix, target_prototype::AbstractArray) = A
-materialize_mat(A::Adjoint{T,S}, target_prototype::AbstractArray) where {T,S<:StridedMatrix} = copy(A)
-materialize_mat(A::Transpose{T,S}, target_prototype::AbstractArray) where {T,S<:StridedMatrix} = copy(A)
-function materialize_mat(A::AbstractSparseMatrix, target_prototype::AbstractArray)
-    B = similar(target_prototype, eltype(A), size(A))
-    B .= collect(A)
+# Get a concrete, dense, mutable matrix out of `A`, with the same eltype and size,
+# living on the same device as `prototype` (a CPU `Vector` or a `CuVector`). The
+# caller owns the result and may mutate it in place, so when `A` is already a
+# dense matrix on the right device we hand it straight back.
+
+# `A` is already exactly what we want, so there is nothing to do.
+materialize_mat(A::Matrix, ::Array) = A
+materialize_mat(A::CuMatrix, ::CuArray) = A # assumes a single GPU, which is all this package targets
+
+# The R factor that comes out of `qrthin!` on the GPU is an `UpperTriangular`
+# wrapping a `CuMatrix`. The generic `copyto!` below would read the implicit zeros
+# one element at a time (scalar indexing, which is slow or disallowed on the GPU),
+# so we copy the full parent and zero out the lower triangle with `triu!` instead.
+function materialize_mat(A::UpperTriangular{T,<:CuMatrix}, prototype::AbstractArray) where {T}
+    B = similar(prototype, T, size(A))
+    copyto!(B, parent(A))
+    triu!(B)
     return B
 end
-function materialize_mat(A::LinearMap, target_prototype::AbstractArray)
-    B = similar(target_prototype, eltype(A), size(A))
-    _, n = size(A)
-    v = similar(target_prototype, eltype(A), n)
-    @inbounds for i in 1:n
-        fill!(v, zero(eltype(A)))
-        CUDA.@allowscalar v[i] = one(eltype(A))
-        B[:, i] .= A * v
-    end
+
+# Anything else that is already a matrix: an Adjoint, Transpose, Hermitian or
+# UpperTriangular on the CPU, a sparse matrix, or a dense matrix sitting on the
+# wrong device. We allocate on the prototype's device and copy into it. `copyto!`
+# fills in the dense form for all of these.
+function materialize_mat(A::AbstractMatrix, prototype::AbstractArray)
+    B = similar(prototype, eltype(A), size(A))
+    copyto!(B, A)
     return B
 end
-function materialize_mat(A, target_prototype::AbstractArray)
-    B = similar(target_prototype, eltype(A), size(A))
-    try
-        copyto!(B, A)
-        return B
-    catch
-    end
-    try
-        _, n = size(A)
-        @inbounds for i in 1:n
-            B[:, i] .= A[:, i]
-        end
-        return B
-    catch
-    end
-    try
-        B = similar(target_prototype, eltype(A), size(A))
-        _, n = size(A)
-        v = similar(target_prototype, eltype(A), n)
-        @inbounds for i in 1:n
-            fill!(v, zero(eltype(A)))
-            CUDA.@allowscalar v[j] = one(eltype(A))
-            B[:, i] .= A * v
-        end
-        return B
-    catch
-    end
-    try
-        m, n = size(A)
-        @inbounds for j in 1:n
-            for i in 1:m
-                B[i, j] = A[i, j]
-            end
-        end
-        return B
-    catch
-    end
-    B .= to_host(A)
-    return B
+
+# A `LinearMap` is an `AbstractMatrix`, but `copyto!` into a dense array is not
+# defined for it, so we apply the operator instead (see `_materialize_via_matmul`).
+materialize_mat(A::LinearMap, prototype::AbstractArray) = _materialize_via_matmul(A, prototype)
+
+# A bare matrix-free operator that only knows its `size` and how to multiply. We
+# materialize it with a single matrix product against the identity rather than one
+# matrix-vector product per column.
+materialize_mat(A, prototype::AbstractArray) = _materialize_via_matmul(A, prototype)
+
+# Apply `A` to a dense identity to read off all of its columns at once. The
+# identity is built on the prototype's device so the product lands there too.
+function _materialize_via_matmul(A, prototype::AbstractArray)
+    T = eltype(A)
+    n = size(A, 2)
+    d = fill!(similar(prototype, T, n), one(T))
+    E = similar(prototype, T, n, n)
+    copyto!(E, Diagonal(d)) # dense identity, built without scalar indexing
+    return materialize_mat(A * E, prototype)
 end
