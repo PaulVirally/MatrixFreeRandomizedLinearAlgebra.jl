@@ -36,17 +36,27 @@ function materialize_mat(A::AbstractMatrix, prototype::AbstractArray)
 end
 
 # A `LinearMap` is an `AbstractMatrix`, but `copyto!` into a dense array is not
-# defined for it. Multiplying it by a dense matrix (`A * E`, below) would build a
-# *lazy* `CompositeMap` rather than evaluating the product, so we use `mul!` to
-# read all of its columns into a dense buffer at once. The identity and the
-# output live on the prototype's device, so the product lands there too.
+# defined for it. We read off its columns by applying it to the columns of the
+# identity, one at a time. We deliberately do this column by column with a *vector*
+# right-hand side rather than a single block `mul!(B, A, E)` against a dense
+# identity: for a nested `CompositeMap` the block path flattens the composite and,
+# for BLAS-3 efficiency, densifies an intermediate sub-chain via
+# `convert(AbstractArray, ::LinearMap)`, which allocates a *host* `Matrix` and
+# probes sub-maps with *host* vectors. When a sub-map wraps a `CuArray` that probe
+# dispatches CPU BLAS on a device array and throws. The vector path
+# (`_compositemul!`) instead allocates its intermediates with `similar(x)`, so it
+# stays on the prototype's device. The single device column `e` is reused across
+# columns to keep the extra allocation at O(n) (no dense `n×n` identity).
 function materialize_mat(A::LinearMap, prototype::AbstractArray)
     T = eltype(A)
     m, n = size(A)
-    E = similar(prototype, T, n, n)
-    copyto!(E, Diagonal(fill!(similar(prototype, T, n), one(T)))) # dense identity, no scalar indexing
     B = similar(prototype, T, m, n)
-    mul!(B, A, E) # eager: evaluates the operator columnwise into B
+    e = fill!(similar(prototype, T, n), zero(T)) # reused unit-vector RHS, on the prototype's device
+    @views for j in 1:n
+        e[j:j] .= one(T)    # e = eⱼ via a 1-element broadcast (a kernel, not scalar indexing)
+        mul!(B[:, j], A, e) # vector RHS: device-only composite path, no host densification
+        e[j:j] .= zero(T)   # reset for the next column
+    end
     return B
 end
 
