@@ -173,7 +173,6 @@ end
 
     @testset "CUDA" begin
         if CUDA.functional()
-            CUDA.allowscalar(false)
             Random.seed!(0xdeadbeef)
             CUDA.seed!(0xdeadbeef)
             n, m = 64, 24
@@ -208,8 +207,6 @@ end
             xc = CUDA.zeros(ComplexF32, 10_000)
             rademacher!(xc)
             @test sum(abs2, xc) / length(xc) ≈ 1.0f0
-
-            CUDA.allowscalar(true)
         else
             @info "Skipping trace CUDA tests: CUDA not functional on this system"
         end
