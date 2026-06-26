@@ -222,38 +222,64 @@ end
     end
 
     # =====================================================================
-    # Device placement: the result tracks the prototype's device, not the
-    # operator's. Covers CPU↔GPU and CPU↔mock for a dense matrix and a composite.
+    # Device placement. For a CONCRETE matrix, materialize_mat transfers it onto
+    # the prototype's device (via copyto!), so the result follows the prototype.
+    # A matrix-free / LinearMap operator has no such freedom: it can only be
+    # applied on the device its own data lives on, so the operator and the
+    # prototype MUST be co-located — as they always are in this package, where Ω
+    # is built with `similar(sample_vec, …)` and the operator shares that device.
+    # A mismatched pair is unsupported and must error rather than silently
+    # dispatch host BLAS on a device array (the original block-mul! crashed here
+    # too). We pin both directions so a CPU-only run catches it.
     # =====================================================================
-    @testset "device placement follows the prototype" begin
+    @testset "device placement" begin
         n = 6
         Ahost = randn(ComplexF64, n, n)
         Bhost = randn(ComplexF64, n, n)
         ref = Ahost * Bhost
 
-        # CPU operator, mock prototype → mock result.
-        op_cpu = LinearMap(Ahost) * LinearMap(Bhost)
-        Mm = materialize_mat(op_cpu, mock_proto(ComplexF64))
-        @test Mm isa MockDeviceArray
-        @test collect(Mm) ≈ ref
+        @testset "concrete matrices transfer to the prototype's device" begin
+            onmock = materialize_mat(Ahost, mock_proto(ComplexF64))
+            @test onmock isa MockDeviceArray
+            @test collect(onmock) == Ahost
+            back = materialize_mat(MockDeviceArray(copy(Ahost)), Vector{ComplexF64}(undef, 0))
+            @test back isa Matrix
+            @test back == Ahost
+        end
 
-        # A dense matrix moved across devices.
-        @test materialize_mat(Ahost, mock_proto(ComplexF64)) isa MockDeviceArray
-        @test collect(materialize_mat(Ahost, mock_proto(ComplexF64))) == Ahost
+        @testset "co-located operator and prototype materialize fine" begin
+            op_mock = LinearMap(MockDeviceArray(copy(Ahost))) * LinearMap(MockDeviceArray(copy(Bhost)))
+            M = materialize_mat(op_mock, mock_proto(ComplexF64))
+            @test M isa MockDeviceArray
+            @test collect(M) ≈ ref
+        end
+
+        @testset "mismatched operator/prototype device is rejected" begin
+            dev_op = LinearMap(MockDeviceArray(copy(Ahost))) * LinearMap(MockDeviceArray(copy(Bhost)))
+            @test_throws HostDeviceMixError materialize_mat(dev_op, Vector{ComplexF64}(undef, 0))
+            host_op = LinearMap(Ahost) * LinearMap(Bhost)
+            @test_throws HostDeviceMixError materialize_mat(host_op, mock_proto(ComplexF64))
+        end
 
         if CUDA.functional()
-            # Move a CPU matrix onto the GPU and back.
-            dB = materialize_mat(Ahost, CuArray{ComplexF64}(undef, 0))
-            @test dB isa CuArray
-            @test Array(dB) == Ahost
-            hB = materialize_mat(CuArray(Ahost), Vector{ComplexF64}(undef, 0))
-            @test hB isa Matrix
-            @test hB == Ahost
-            # A GPU composite materialized onto a CPU prototype lands on the CPU.
-            op_gpu = LinearMap(CuArray(Ahost)) * LinearMap(CuArray(Bhost))
-            hM = materialize_mat(op_gpu, Vector{ComplexF64}(undef, 0))
-            @test hM isa Matrix
-            @test hM ≈ ref
+            @testset "CUDA concrete-matrix transfer (both directions)" begin
+                dB = materialize_mat(Ahost, CuArray{ComplexF64}(undef, 0))
+                @test dB isa CuArray
+                @test Array(dB) == Ahost
+                hB = materialize_mat(CuArray(Ahost), Vector{ComplexF64}(undef, 0))
+                @test hB isa Matrix
+                @test hB == Ahost
+            end
+            @testset "CUDA co-located operator materializes on device" begin
+                op_gpu = LinearMap(CuArray(Ahost)) * LinearMap(CuArray(Bhost))
+                M = materialize_mat(op_gpu, CuArray{ComplexF64}(undef, 0))
+                @test M isa CuArray
+                @test Array(M) ≈ ref
+            end
+            @testset "CUDA mismatched operator/prototype device errors" begin
+                op_gpu = LinearMap(CuArray(Ahost)) * LinearMap(CuArray(Bhost))
+                @test_throws Exception materialize_mat(op_gpu, Vector{ComplexF64}(undef, 0))
+            end
         end
     end
 

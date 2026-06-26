@@ -65,26 +65,39 @@ asplain(x::Adjoint) = adjoint(asplain(parent(x)))
 asplain(x::Transpose) = transpose(asplain(parent(x)))
 asplain(x) = x
 
-const MockMatrix{T} = Union{MockDeviceArray{T,2},
-                            Adjoint{T,<:MockDeviceArray{T,2}},
-                            Transpose{T,<:MockDeviceArray{T,2}}}
+const MockVector{T} = MockDeviceArray{T,1}
+const MockMatrix{T} = MockDeviceArray{T,2}
+const MockMatrixOp{T} = Union{MockMatrix{T},
+                              Adjoint{T,<:MockMatrix{T}},
+                              Transpose{T,<:MockMatrix{T}}}
 
+# A multiply is legal only if every operand sits on the same side of the
+# host/device divide. Mixing throws, mirroring the GPU's unsafe_convert crash in
+# BOTH directions: a device matrix against a host vector AND a host matrix against
+# a device vector (the latter crashes a real GPU too, so the mock must reject it).
 function _checked_mul!(C, A, B, α, β)
-    if !(ismock(C) && ismock(B))
+    devs = (ismock(C), ismock(A), ismock(B))
+    (all(devs) || !any(devs)) ||
         throw(HostDeviceMixError(
             "BLAS would mix host and device operands: " *
             "C::$(typeof(C)), A::$(typeof(A)), B::$(typeof(B)). " *
             "On a real GPU this is the unsafe_convert(::Ptr, ::CuPtr) crash."))
-    end
     mul!(asplain(C), asplain(A), asplain(B), α, β)
     return C
 end
 
-LinearAlgebra.mul!(C::AbstractVector, A::MockMatrix, B::AbstractVector, α::Number, β::Number) =
-    _checked_mul!(C, A, B, α, β)
-LinearAlgebra.mul!(C::AbstractMatrix, A::MockMatrix, B::AbstractMatrix, α::Number, β::Number) =
-    _checked_mul!(C, A, B, α, β)
-LinearAlgebra.mul!(C::AbstractVector, A::MockMatrix, B::AbstractVector) =
-    _checked_mul!(C, A, B, true, false)
-LinearAlgebra.mul!(C::AbstractMatrix, A::MockMatrix, B::AbstractMatrix) =
-    _checked_mul!(C, A, B, true, false)
+# Intercept every multiply that touches a mock operand — whether the device array
+# is the matrix, the right-hand side, or both. The third method per arity breaks
+# the all-mock dispatch ambiguity. The 3-arg `mul!(C, A, B)` forms forward here
+# through LinearAlgebra's generic `mul!(C, A, B) = mul!(C, A, B, true, false)`.
+for (Cv, Bv, Bmock) in ((:AbstractVector, :AbstractVector, :MockVector),
+                        (:AbstractMatrix, :AbstractMatrix, :MockMatrix))
+    @eval begin
+        LinearAlgebra.mul!(C::$Cv, A::MockMatrixOp, B::$Bv, α::Number, β::Number) =
+            _checked_mul!(C, A, B, α, β)
+        LinearAlgebra.mul!(C::$Cv, A::AbstractMatrix, B::$Bmock, α::Number, β::Number) =
+            _checked_mul!(C, A, B, α, β)
+        LinearAlgebra.mul!(C::$Cv, A::MockMatrixOp, B::$Bmock, α::Number, β::Number) =
+            _checked_mul!(C, A, B, α, β)
+    end
+end
