@@ -173,18 +173,26 @@ end
 
     @testset "CUDA" begin
         if CUDA.functional()
-            CUDA.allowscalar(false) # the device paths must not scalar-index
+            CUDA.allowscalar(false)
             Random.seed!(0xdeadbeef)
+            CUDA.seed!(0xdeadbeef)
             n, m = 64, 24
 
-            # real
+            # real: XTrace on a general operator
             A = decaying_operator(Float32, n)
             dA = cu(A)
             tA = tr(A)
             t_x = trace(dA, m)
             @test isapprox(Float64(real(t_x)), real(tA); rtol=5e-2)
-            t_h = trace(dA, 4000; low_mem=true)
-            @test isapprox(Float64(real(t_h)), real(tA); rtol=1e-1)
+
+            # real: Hutchinson on a Hermitian operator. A general matrix's trace is
+            # near zero, so a relative tolerance is meaningless for the high-variance
+            # Hutchinson estimator; use a Hermitian operator (positive trace) as the
+            # CPU low_mem test does.
+            Ah = decaying_operator(Float32, n; herm=true)
+            dAh = cu(Ah)
+            t_h = trace(dAh, 4000; low_mem=true)
+            @test isapprox(Float64(real(t_h)), real(tr(Ah)); rtol=1e-1)
 
             # complex
             B = decaying_operator(ComplexF32, n; herm=true)

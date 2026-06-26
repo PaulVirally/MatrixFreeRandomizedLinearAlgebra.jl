@@ -166,7 +166,9 @@ function svd_restricted(operator, Q, num_components::Int, sample_vec::AbstractAr
     Bdag = operator' * Q # B' = A' * Q
     k = min(num_components, size(Bdag, 2)) # In case num_components > rank(B), we limit to rank(B)
     q, r = qrthin!(materialize_mat(Bdag, sample_vec)) # B' = q * r
-    S = svd!(r) # r = Ũ * Σ̃ * Ṽ'
+    # Materialize r onto the device so svd! dispatches to CUSOLVER on the GPU
+    # (UpperTriangular{CuMatrix} would otherwise fall back to a host SVD).
+    S = svd!(materialize_mat(r, sample_vec)) # r = Ũ * Σ̃ * Ṽ'
     left_svecs = Q * (S.Vt[1:k, :])' # U = Q * Ṽ
     svals = S.S[1:k] # Σ = Σ̃
     right_svecs = q * S.U[:, 1:k] # V' = (q * Ũ)' ⟹ V = q * Ũ

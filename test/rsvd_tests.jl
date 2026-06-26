@@ -63,6 +63,7 @@ using CUDA
     @testset "CUDA" begin
         if CUDA.functional()
             Random.seed!(0xdeadbeef)
+            CUDA.seed!(0xdeadbeef)
             m, n, k = 64, 32, 8
             A = randn(Float32, m, n)
             dA = cu(A)
