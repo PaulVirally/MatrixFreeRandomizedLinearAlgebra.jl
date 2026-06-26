@@ -73,7 +73,11 @@ function rsvd(operator, num_components::Int; num_oversamples::Int=num_components
         # range seed cannot be threaded through and is not supported here.
         seed_Q === nothing || throw(ArgumentError("seed_Q is not supported for tall operators (size(operator, 1) > size(operator, 2)) because rsvd transposes them internally; transpose the operator yourself and seed a basis for its (wide) range, or omit seed_Q"))
         svd_t = rsvd(operator', num_components; num_oversamples=num_oversamples, num_power_iterations=num_power_iterations, sample_vec=sample_vec)
-        return svd_t' # SVD type supports adjoint
+        F = svd_t' # adjoint maps the wide SVD back to the tall operator's SVD
+        # adjoint(::SVD) leaves U/Vt as lazy `Adjoint` wrappers; copy them into plain
+        # arrays so they match the operator's storage (e.g. a `CuArray`, not an
+        # `Adjoint{CuArray}`). `copy` conjugate-transposes correctly for complex too.
+        return SVD(copy(F.U), F.S, copy(F.Vt))
     end
 
     # We need to find an orthonormal matrix Q such that A ≈ Q * Q' * A (where A is the operator)
@@ -166,9 +170,7 @@ function svd_restricted(operator, Q, num_components::Int, sample_vec::AbstractAr
     Bdag = operator' * Q # B' = A' * Q
     k = min(num_components, size(Bdag, 2)) # In case num_components > rank(B), we limit to rank(B)
     q, r = qrthin!(materialize_mat(Bdag, sample_vec)) # B' = q * r
-    # Materialize r onto the device so svd! dispatches to CUSOLVER on the GPU
-    # (UpperTriangular{CuMatrix} would otherwise fall back to a host SVD).
-    S = svd!(materialize_mat(r, sample_vec)) # r = Ũ * Σ̃ * Ṽ'
+    S = svd!(r) # r = Ũ * Σ̃ * Ṽ'
     left_svecs = Q * (S.Vt[1:k, :])' # U = Q * Ṽ
     svals = S.S[1:k] # Σ = Σ̃
     right_svecs = q * S.U[:, 1:k] # V' = (q * Ũ)' ⟹ V = q * Ũ
