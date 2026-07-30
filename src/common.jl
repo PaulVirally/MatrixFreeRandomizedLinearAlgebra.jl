@@ -65,6 +65,58 @@ end
 # matrix-vector product per column.
 materialize_mat(A, prototype::AbstractArray) = _materialize_via_matmul(A, prototype)
 
+# Compute `operator * X`, materialized as a dense matrix on `prototype`'s device.
+op_product(operator, X, prototype::AbstractArray) = materialize_mat(operator * X, prototype)
+
+# For a `LinearMap`, `operator * X` is a lazy `CompositeMap` that `materialize_mat`
+# would have to read back with unit vectors, paying one dense gemv (`X * eⱼ`) and
+# one n-vector allocation per column on top of the map application itself. Apply
+# the map to the columns of `X` directly instead. LinearMaps' own block
+# multiplication feeds maps `SubArray` columns, so a map must accept views, and
+# the vector `mul!` path keeps all internal intermediates on the columns' device
+# (the same reasoning as `materialize_mat(::LinearMap, ...)` above).
+function op_product(operator::LinearMap, X::AbstractMatrix, prototype::AbstractArray)
+    T = promote_type(eltype(operator), eltype(X))
+    B = similar(prototype, T, size(operator, 1), size(X, 2))
+    Xd = materialize_mat(X, prototype) # make sure the columns live where the map's intermediates will
+    @views for j in axes(Xd, 2)
+        mul!(B[:, j], operator, Xd[:, j])
+    end
+    return B
+end
+
+# Whether `mul!(Y, operator, X)` may safely reuse buffers allocated from
+# `prototype`. A `LinearMap` always qualifies: its vector `mul!` path allocates
+# its internal intermediates with `similar` off the operand, so it inherits the
+# operand's device (exactly what `op_product` above relies on). A plain matrix
+# qualifies only if its products already land on the prototype's device, which we
+# probe with a free zero-column multiply. Mixing a host matrix with device
+# buffers (or any operator whose product needs a device transfer) falls back to
+# the allocating `op_product` path.
+function supports_inplace_mul(operator, prototype::AbstractArray)
+    operator isa LinearMap && return true
+    operator isa AbstractMatrix || return false
+    try
+        X0 = similar(prototype, eltype(operator), size(operator, 2), 0)
+        Y0 = operator * X0
+        return typeof(materialize_mat(Y0, prototype)) === typeof(Y0)
+    catch
+        return false
+    end
+end
+
+# `operator * X` written into the preallocated `Y`. Only call this when
+# `supports_inplace_mul(operator, prototype)` returned `true` for the prototype
+# `Y` and `X` were allocated from. The `LinearMap` method goes column by column
+# for the same device-safety reason as `op_product`.
+op_mul!(Y, operator, X) = mul!(Y, operator, X)
+function op_mul!(Y, operator::LinearMap, X::AbstractMatrix)
+    @views for j in axes(X, 2)
+        mul!(Y[:, j], operator, X[:, j])
+    end
+    return Y
+end
+
 # Apply `A` to a dense identity to read off all of its columns at once. The
 # identity is built on the prototype's device so the product lands there too.
 function _materialize_via_matmul(A, prototype::AbstractArray)

@@ -167,9 +167,9 @@ function svd_restricted(operator, Q, num_components::Int, sample_vec::AbstractAr
     # U ≈ Q * Ṽ
     # Σ ≈ Σ̃
     # V' ≈ (q * Ũ)'
-    Bdag = operator' * Q # B' = A' * Q
+    Bdag = op_product(operator', Q, sample_vec) # B' = A' * Q
     k = min(num_components, size(Bdag, 2)) # In case num_components > rank(B), we limit to rank(B)
-    q, r = qrthin!(materialize_mat(Bdag, sample_vec)) # B' = q * r
+    q, r = qrthin!(Bdag) # B' = q * r
     S = svd!(r) # r = Ũ * Σ̃ * Ṽ'
     left_svecs = Q * (S.Vt[1:k, :])' # U = Q * Ṽ
     svals = S.S[1:k] # Σ = Σ̃
@@ -178,9 +178,9 @@ function svd_restricted(operator, Q, num_components::Int, sample_vec::AbstractAr
 end
 
 function svdvals_restricted(operator, Q, num_components::Int, sample_vec::AbstractArray)
-    Bdag = operator' * Q # B' = A' * Q
+    Bdag = op_product(operator', Q, sample_vec) # B' = A' * Q
     k = min(num_components, size(Bdag, 2)) # In case num_components > rank(B), we limit to rank(B)
-    _, r = qrthin!(materialize_mat(Bdag, sample_vec)) # B' = q * r
+    _, r = qrthin!(Bdag) # B' = q * r
     Σ = svdvals!(materialize_mat(r, sample_vec)) # r = Ũ * Σ̃ * Ṽ'
     return Σ[1:k] # Σ = Σ̃
 end

@@ -129,7 +129,10 @@ function eigen_hermitian_restricted(operator, Q, num_components::Int, sample_vec
     # Thus:
     # Λ = Λ̃
     # V = Q * Ṽ
-    B = Q' * (operator * Q) # B = Q' * A * Q
+
+    # Materialize A * Q first (device-safe for any operator, including lazy
+    # LinearMap composites), then reduce with a single gemm.
+    B = Q' * op_product(operator, Q, sample_vec) # B = Q' * A * Q
     B = Hermitian(materialize_mat(B, sample_vec))
     if sample_vec isa CuArray
         # CUDA.jl does not support eigen! yet for these matrices
@@ -145,7 +148,7 @@ function eigen_hermitian_restricted(operator, Q, num_components::Int, sample_vec
 end
 
 function eigvals_hermitian_restricted(operator, Q, num_components::Int, sample_vec::AbstractArray)
-    B = Q' * (operator * Q) # B = Q' * A * Q
+    B = Q' * op_product(operator, Q, sample_vec) # B = Q' * A * Q
     B = Hermitian(materialize_mat(B, sample_vec))
     if sample_vec isa CuArray
         # CUDA.jl does not support eigen! yet for these matrices

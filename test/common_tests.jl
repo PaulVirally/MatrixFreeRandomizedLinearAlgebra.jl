@@ -320,3 +320,80 @@ end
         end
     end
 end
+
+# ---------------------------------------------------------------------------
+# qthin!/qrthin! — the economy-size QR helpers behind every sketch. Tall/square
+# inputs are factored in place (Q comes back as the input array); wide inputs
+# return the m×m economy Q and the full m×n upper-trapezoidal R, so Q * R
+# always reconstructs the input. The BigFloat runs exercise the generic
+# (non-LAPACK) methods, the mock backend checks results stay device-typed, and
+# the CUDA block covers the CUSOLVER methods.
+# ---------------------------------------------------------------------------
+@testset "qthin!/qrthin! tests" begin
+    qthin! = MatrixFreeRandomizedLinearAlgebra.qthin!
+    qrthin! = MatrixFreeRandomizedLinearAlgebra.qrthin!
+
+    shapes = ((60, 20), (40, 40), (20, 60)) # tall, square, wide
+    @testset "$T / $(m)x$(n)" for T in (Float64, Float32, ComplexF64, ComplexF32, BigFloat), (m, n) in shapes
+        rtol = 1000 * max(eps(real(T)), eps(Float64)) # BigFloat: don't demand more than the test arithmetic
+        Random.seed!(42)
+        B = randn(T === BigFloat ? Float64 : T, m, n)
+        B = Matrix{T}(B)
+        k = min(m, n)
+
+        A = copy(B)
+        Q = qthin!(A)
+        @test size(Q) == (m, k)
+        @test norm(Q' * Q - I) < rtol
+        @test norm(Q * (Q' * B) - B) < rtol * norm(B) # Q spans the range of B
+        m >= n && @test Q === A # tall/square: factored in place
+
+        A = copy(B)
+        Q, R = qrthin!(A)
+        @test size(Q) == (m, k)
+        @test size(R) == (k, n)
+        @test norm(Q' * Q - I) < rtol
+        @test norm(Q * R - B) < rtol * norm(B) # economy QR reconstructs B
+        # Tall/square R is UpperTriangular by construction; a wide R is a plain
+        # matrix that must be upper trapezoidal.
+        R isa UpperTriangular || @test istriu(R)
+    end
+
+    @testset "mock device stays device-typed / $(m)x$(n)" for (m, n) in ((30, 10), (10, 30))
+        B = randn(Float64, m, n)
+        k = min(m, n)
+        Q = qthin!(MockDeviceArray(copy(B)))
+        @test Q isa MockDeviceArray
+        @test norm(collect(Q)' * collect(Q) - I) < 1e-10
+        Q, R = qrthin!(MockDeviceArray(copy(B)))
+        @test Q isa MockDeviceArray
+        @test norm(collect(Q) * collect(R) - B) < 1e-10 * norm(B)
+    end
+
+    @testset "CUDA qthin!/qrthin!" begin
+        if CUDA.functional()
+            @testset "$(m)x$(n)" for (m, n) in ((60, 20), (40, 40), (20, 60))
+                B = randn(Float32, m, n)
+                k = min(m, n)
+                dQ = qthin!(CuArray(B))
+                @test dQ isa CuMatrix
+                @test size(dQ) == (m, k)
+                Q = Array(dQ)
+                @test norm(Q' * Q - I) < 1e-4
+                @test norm(Q * (Q' * B) - B) < 1e-4 * norm(B)
+                dQ, dR = qrthin!(CuArray(B))
+                Q = Array(dQ)
+                # Bring R to the host without scalar-indexing through the
+                # UpperTriangular wrapper (its parent holds reflector garbage
+                # below the diagonal that triu! clears).
+                R = dR isa UpperTriangular ? triu!(Array(parent(dR))) : Array(dR)
+                @test size(Q) == (m, k)
+                @test size(R) == (k, n)
+                @test norm(Q * R - B) < 1e-4 * norm(B)
+                @test istriu(R)
+            end
+        else
+            @info "Skipping qthin!/qrthin! CUDA tests: CUDA not functional on this system"
+        end
+    end
+end
