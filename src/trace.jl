@@ -122,18 +122,28 @@ rademacher_buffer(x::AbstractArray{Complex{T}}) where {T} = similar(x, T)
 draw_rademacher!(x::AbstractArray{<:Real}, _) = rademacher!(x)
 draw_rademacher!(x::AbstractArray{<:Complex}, buf) = rademacher!(x, buf)
 
+# One Hutchinson quadratic-form sample x' A x. When the operator supports
+# in-place products on the sample's device, `y` is a preallocated buffer reused
+# across all samples (this is the low-memory path, so per-sample n-vector
+# allocations are exactly what we must avoid); otherwise `y === nothing` and we
+# fall back to the allocating product.
+hutchinson_sample(operator, x, ::Nothing) = dot(x, operator * x)
+hutchinson_sample(operator, x, y) = dot(x, op_mul!(y, operator, x))
+hutchinson_buffer(operator, x, sample_vec) = supports_inplace_mul(operator, sample_vec) ? similar(x) : nothing
+
 function hutchinson_trace_fixed(operator, num_samples::Integer, sample_vec::AbstractArray)
     num_samples >= 1 || throw(ArgumentError("num_samples must be positive"))
     T = eltype(operator)
     n = size(operator, 2)
     x = similar(sample_vec, T, n)
     buf = rademacher_buffer(x)
+    y = hutchinson_buffer(operator, x, sample_vec)
     # Welford running mean and sample variance of the (possibly complex) estimates
     μ = zero(T)
     M2 = zero(real(T))
     for k in 1:num_samples
         draw_rademacher!(x, buf)
-        q = dot(x, operator * x)
+        q = hutchinson_sample(operator, x, y)
         δ = q - μ
         μ += δ / k
         M2 += real(δ * conj(q - μ))
@@ -147,6 +157,7 @@ function hutchinson_trace_adaptive(operator, relative_tolerance::Real, min_sampl
     n = size(operator, 2)
     x = similar(sample_vec, T, n)
     buf = rademacher_buffer(x)
+    y = hutchinson_buffer(operator, x, sample_vec)
     z = 1.96 # 95% central-limit half-width
     μ = zero(T)
     M2 = zero(real(T))
@@ -155,7 +166,7 @@ function hutchinson_trace_adaptive(operator, relative_tolerance::Real, min_sampl
     while k < max_samples
         k += 1
         draw_rademacher!(x, buf)
-        q = dot(x, operator * x)
+        q = hutchinson_sample(operator, x, y)
         δ = q - μ
         μ += δ / k
         M2 += real(δ * conj(q - μ))
@@ -181,7 +192,10 @@ function sphere_test_matrix(operator, m::Integer, sample_vec::AbstractArray)
     n = size(operator, 1)
     Ω = similar(sample_vec, T, n, m)
     randn!(Ω)
-    return sqrt(real(T)(n)) .* cnormc(Ω)
+    # Normalize and scale in place; only the 1×m row of column norms is allocated,
+    # instead of two full n×m temporaries.
+    Ω .*= sqrt(real(T)(n)) ./ sqrt.(sum(abs2, Ω; dims=1))
+    return Ω
 end
 
 # Core XTrace estimate from a test matrix Ω and the thin-QR factors Q, R of its
@@ -193,7 +207,7 @@ end
 function xtrace_estimate(operator, Ω, Q, R, sample_vec::AbstractArray)
     n = size(operator, 1)
     m = size(Ω, 2)
-    Z = materialize_mat(operator * Q, sample_vec)
+    Z = op_product(operator, Q, sample_vec)
 
     # The reduced blocks are m x m and tiny; finish on the host with dense LAPACK,
     # mirroring how reigen.jl handles its restricted problem. The expensive n x m
@@ -232,13 +246,13 @@ function xtrace_adaptive(operator, relative_tolerance::Real, max_samples::Intege
     cap = min(max_samples, n)
     m = clamp(10, 2, n) # initial sketch size
     Ω = sphere_test_matrix(operator, m, sample_vec)
-    Y = materialize_mat(operator * Ω, sample_vec)
+    Y = op_product(operator, Ω, sample_vec)
     Q, R = qrthin!(copy(Y)) # copy so Y survives for adaptive reuse
     t, err = xtrace_estimate(operator, Ω, Q, R, sample_vec)
     while err > relative_tolerance * abs(t) && m < cap
         add = min(m, cap - m) # double the sketch, capped
         Ωnew = sphere_test_matrix(operator, add, sample_vec)
-        Ynew = materialize_mat(operator * Ωnew, sample_vec)
+        Ynew = op_product(operator, Ωnew, sample_vec)
         Ω = hcat(Ω, Ωnew) # reuse the existing operator * Ω products
         Y = hcat(Y, Ynew)
         m += add
