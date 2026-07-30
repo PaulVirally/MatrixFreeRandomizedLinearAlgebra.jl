@@ -27,6 +27,9 @@ docs/site/
 # environment.
 Manifest.toml
 
+# Machine-specific benchmark results (see benchmark/benchmarks.jl)
+benchmark/results/
+
 ### macOS ###
 # General
 .DS_Store
