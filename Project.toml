@@ -11,10 +11,17 @@ LinearMaps = "7a12625a-238d-50fd-b39a-03d52299707e"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
+[weakdeps]
+Funicular = "7ea9c160-9439-4cfe-a32a-3debd616a773"
+
+[extensions]
+MFRLAFunicularExt = "Funicular"
+
 [compat]
 Aqua = "0.8"
 CUDA = "5"
 Documenter = "1"
+Funicular = "0.2"
 LinearAlgebra = "1"
 LinearMaps = "3"
 Random = "1"
@@ -22,10 +29,14 @@ SparseArrays = "1"
 Test = "1"
 julia = "1.11"
 
+[sources]
+Funicular = {url = "https://github.com/PaulVirally/Funicular.jl"}
+
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+Funicular = "7ea9c160-9439-4cfe-a32a-3debd616a773"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Aqua", "Test"]
+test = ["Aqua", "Funicular", "Test"]

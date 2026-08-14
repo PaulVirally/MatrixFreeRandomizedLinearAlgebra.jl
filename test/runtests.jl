@@ -9,4 +9,8 @@ using MatrixFreeRandomizedLinearAlgebra
     include("reigen_hermitian_tests.jl")
     include("reigvals_hermitian_tests.jl")
     include("trace_tests.jl")
+    include("panel_setup.jl")
+    include("panel_hermitian_tests.jl")
+    include("panel_rsvd_tests.jl")
+    include("panel_trace_tests.jl")
 end

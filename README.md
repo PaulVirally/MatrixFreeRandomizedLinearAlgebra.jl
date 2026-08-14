@@ -58,6 +58,32 @@ rel = opnorm(A - U * Diagonal(S) * Vt) / opnorm(A)
 println("relative error: ", rel)
 ```
 
+## Very large operators
+
+The operator is matrix-free, but the `N × (k + p)` sketch is not: at `N = 10⁷`
+and `k + p = 1000` it is 160 GB of `ComplexF64`, which no GPU will hold. Every
+routine accepts a [Funicular.jl](https://github.com/PaulVirally/Funicular.jl)
+`ResidencyPlan` through the `plan` keyword. Given one, the sketch is streamed
+through the device in column panels and spills to pinned host memory and to
+disk, and the random test matrix is regenerated on demand rather than stored.
+
+```julia
+using CUDA, Funicular, MatrixFreeRandomizedLinearAlgebra
+
+plan = ResidencyPlan(backend = Funicular.cuda_backend(),
+                     device_budget = 0.8 * CUDA.total_memory(),
+                     host_budget = 192 * 2^30,
+                     scratch_dir = "/scratch/me/funicular")
+
+E = reigen_hermitian(G, 512; num_oversamples=64, plan=plan, seed=1)
+E.values                    # host Vector of eigenvalues
+E.vectors                   # N × 512 Funicular PanelMatrix
+```
+
+See [Very large operators](https://paulvirally.github.io/MatrixFreeRandomizedLinearAlgebra.jl/stable/large_operators/)
+for the operator contract, the sweep-counting cost model, and when not to use
+this.
+
 ## Learn more
 
 - [Documentation](https://paulvirally.github.io/MatrixFreeRandomizedLinearAlgebra.jl/stable):

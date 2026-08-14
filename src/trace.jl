@@ -6,7 +6,8 @@ using Random
     trace(operator, num_samples; relative_tolerance=nothing, low_mem=false,
           return_error=false, min_samples=30,
           max_samples=(low_mem ? 4096 : min(size(operator, 1), 512)),
-          sample_vec=similar(operator, eltype(operator), 0))
+          sample_vec=similar(operator, eltype(operator), 0),
+          plan=nothing, seed=nothing, validate=true)
 
 Estimate the trace of a square matrix-like linear operator using randomized
 (stochastic) trace estimation.
@@ -62,6 +63,43 @@ exactly one of the two.
   arrays are allocated on the same device/storage as `operator`. You can pass a
   vector living on a different device (e.g. a `CuVector`) to force all
   temporaries onto that device.
+- `plan = nothing`:
+  A Funicular `ResidencyPlan`. When given, the sketch is held in Funicular's
+  tiered panel storage. The plan takes precedence over `sample_vec`, which is
+  ignored on this path since the plan's backend decides where the panels are
+  computed. `operator` must satisfy Funicular's operator contract (see
+  `Funicular.check_operator`).
+
+  The panel path runs XTrace only, and so requires `low_mem=false`: Hutchinson
+  holds one or two vectors at a time, so panel storage has nothing to stream,
+  and `low_mem=true` together with a `plan` raises an `ArgumentError`. The test matrix itself costs no
+  storage here, since its columns are regenerated from `seed` on demand. Only
+  the three `size(operator, 1) × m` panel matrices are held (the image
+  `Y = A * Ω`, its orthonormalization `Q`, and `Z = A * Q`), and only two of
+  them at once outside the reduction. The sphere normalization is applied
+  exactly, per column, on this path, since a regenerated column arrives whole;
+  in memory it is a broadcast over a stored draw. Both are valid draws from the
+  same distribution, so the two paths agree statistically but not entry by
+  entry.
+
+  Adaptive mode doubles the sketch as it does in memory, and reuses the images
+  from earlier rounds: a column of the wider test matrix depends on its index
+  and the seed alone, so the leading columns are unchanged and only the new ones
+  are multiplied through the operator.
+
+  The sketch is orthonormalized with CholeskyQR2 rather than the Householder QR
+  the in-memory path uses; see [`rsvd`](@ref) for what that costs in
+  conditioning.
+- `seed = nothing`:
+  Panel path only. Seed for Funicular's regenerated test matrix. `nothing` draws
+  a fresh seed from the global RNG, so repeated calls sample differently, as
+  they do in memory. An integer makes the sample reproducible, and reproducible
+  across changes to the panel width and the plan's budgets too, since Funicular
+  generates a ghost column from its index and the seed alone.
+- `validate::Bool = true`:
+  Panel path only. Run `Funicular.check_operator` on `operator` once on entry,
+  which costs a handful of probe multiplies and catches an operator whose
+  `adjoint` or `mul!` does not do what Funicular assumes.
 
 # Returns
 The estimated trace (a scalar of `eltype(operator)`), or, if
@@ -77,12 +115,17 @@ estimated standard error.
   1989; A. Girard, "A fast Monte-Carlo cross-validation procedure for large
   least squares problems with noisy data", Numer. Math. 56, 1989.
 """
-function trace(operator, num_samples::Union{Integer,Nothing}=nothing; relative_tolerance::Union{Real,Nothing}=nothing, low_mem::Bool=false, return_error::Bool=false, min_samples::Integer=30, max_samples::Integer=(low_mem ? 4096 : min(size(operator, 1), 512)), sample_vec::AbstractArray=similar(operator, eltype(operator), 0))
+function trace(operator, num_samples::Union{Integer,Nothing}=nothing; relative_tolerance::Union{Real,Nothing}=nothing, low_mem::Bool=false, return_error::Bool=false, min_samples::Integer=30, max_samples::Integer=(low_mem ? 4096 : min(size(operator, 1), 512)), sample_vec=nothing, plan=nothing, seed=nothing, validate::Bool=true)
     size(operator, 1) == size(operator, 2) || throw(DimensionMismatch("trace requires a square operator, got size $(size(operator))"))
     # Exactly one of num_samples / relative_tolerance must be given
     if (num_samples === nothing) == (relative_tolerance === nothing)
         throw(ArgumentError("provide exactly one of `num_samples` (positional) or `relative_tolerance` (keyword)"))
     end
+    if plan !== nothing
+        return trace_panel(operator, num_samples, plan; relative_tolerance=relative_tolerance, low_mem=low_mem, return_error=return_error, min_samples=min_samples, max_samples=max_samples, seed=resolve_panel_seed(seed), validate=validate)
+    end
+    seed === nothing || throw(seed_without_plan("trace"))
+    sample_vec = resolve_sample_vec(operator, sample_vec)
 
     if low_mem
         t, e = num_samples === nothing ?
@@ -216,6 +259,16 @@ function xtrace_estimate(operator, Ω, Q, R, sample_vec::AbstractArray)
     H = to_host(Q' * Z)
     Tm = to_host(Z' * Ω)
     Rh = to_host(R)
+    return xtrace_from_blocks(n, m, W, H, Tm, Rh)
+end
+
+# The estimator proper, on the four small host blocks it is written in terms of:
+# `W = Q'Ω`, `H = Q'Z`, `Tm = Z'Ω` and the triangular factor `Rh = R`, all m x m,
+# with `Z = operator * Q`. Each path builds these blocks its own way (the dense
+# path with `to_host` on device products, the panel path with `gram` over column
+# panels) and then calls this, so the leave-one-out algebra of Epperly, Tropp and
+# Webber is written down only once.
+function xtrace_from_blocks(n::Integer, m::Integer, W, H, Tm, Rh)
     S = cnormc(Matrix(adjoint(inv(UpperTriangular(Rh)))))
 
     HW = H * W

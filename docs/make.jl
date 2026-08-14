@@ -8,6 +8,7 @@ makedocs(
         "Home" => "index.md",
         "What is matrix-free?" => "matrix_free.md",
         "Algorithms" => "algorithms.md",
+        "Very large operators" => "large_operators.md",
         "Examples" => "examples.md",
         "API" => "api.md",
         "References" => "references.md",

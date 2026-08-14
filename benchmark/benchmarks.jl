@@ -3,7 +3,9 @@
 # Covers every exported randomized algorithm (rsvd, rsvdvals, reigen_hermitian,
 # reigvals_hermitian, trace in all four modes) across representative operator
 # types (dense, sparse, matrix-free LinearMap), plus the internal kernels they
-# are built on (qthin!, qrthin!, sphere_test_matrix, rademacher!).
+# are built on (qthin!, qrthin!, sphere_test_matrix, rademacher!), plus a
+# "panel" group measuring Funicular's tiered panel storage against the dense
+# path on the same operator.
 #
 # When CUDA is functional, a mirrored set of GPU benchmarks (groups prefixed
 # "gpu-") is added: dense CuMatrix, CUSPARSE sparse, and a CUFFT-based blur
@@ -23,6 +25,7 @@
 
 using BenchmarkTools
 using CUDA
+using Funicular
 using LinearAlgebra
 using LinearMaps
 using FFTW
@@ -137,6 +140,69 @@ SUITE["trace"]["hutchinson_fixed_sparse_50000_128"] =
     @benchmarkable trace(A_sparse, 128; low_mem=true, sample_vec=sv) setup = (Random.seed!(7))
 SUITE["trace"]["hutchinson_fixed_dense_3072_128"] =
     @benchmarkable trace(A_herm_dense, 128; low_mem=true, sample_vec=sv) setup = (Random.seed!(7))
+
+# ---------------------------------------------------------------------------
+# Panel path (Funicular). What is measured here is the streaming overhead, so
+# every solve appears twice on the *same* operator: once through the panel path
+# (`plan=`) and once through the plain dense path. The pair of medians is the
+# number to watch, and compare.jl tracks both over time, so a change that makes
+# the panel path slower relative to the dense one shows up as a widening gap
+# rather than as noise on an absolute time.
+#
+# The budgets are synthetic. A CPUBackend plan has no real device to run out of,
+# so a device_budget of 2 MiB plays the part of one: the 2000 × 200 Float64
+# sketch is 3.05 MiB, half again as much, which is what forces panels to be
+# streamed and evicted instead of all living resident. The panel width is pinned
+# at 10 rather than left to the budget arithmetic so that the cut is the same on
+# every machine: 20 panels of the sketch, every one of them moved on every sweep.
+#
+# `validate=false` skips Funicular's `check_operator` probes, which the dense
+# path has no counterpart for and which would otherwise sit in the ratio as a
+# constant. `seed=7` pins the regenerated test matrix the way `Random.seed!(7)`
+# pins the dense path's stored one.
+# ---------------------------------------------------------------------------
+const panel_n = 2000 # operator dimension
+const panel_k = 100  # components
+const panel_p = 100  # oversamples, so a 2000 × 200 sketch
+const panel_q = 2    # power iterations (fixed, and low, to keep the sweep short)
+
+const A_panel = randn(panel_n, panel_n)
+const A_panel_herm = Symmetric(A_panel + A_panel')
+
+panel_plan() = ResidencyPlan(; backend=CPUBackend(), device_budget=2 * 2^20,
+    host_budget=64 * 2^20, panel_width=10)
+
+# One plan per benchmark, reused across samples. That only works because the
+# vectors a solve returns belong to the caller and nothing else frees them: left
+# alone they would accumulate in the plan's host tier until it overflowed
+# mid-sweep, so each wrapper frees what it was handed.
+const panel_plan_eigen = panel_plan()
+const panel_plan_rsvd = panel_plan()
+
+function panel_reigen_solve(plan)
+    E = reigen_hermitian(A_panel_herm, panel_k; num_oversamples=panel_p,
+        num_power_iterations=panel_q, plan=plan, seed=7, validate=false)
+    Funicular.free!(E.vectors)
+    return nothing
+end
+
+function panel_rsvd_solve(plan)
+    F = rsvd(A_panel, panel_k; num_oversamples=panel_p,
+        num_power_iterations=panel_q, plan=plan, seed=7, validate=false)
+    Funicular.free!(F.U)
+    Funicular.free!(F.V)
+    return nothing
+end
+
+SUITE["panel"] = BenchmarkGroup()
+SUITE["panel"]["reigen_herm_2000_k100_dense"] =
+    @benchmarkable reigen_hermitian(A_panel_herm, panel_k; num_oversamples=panel_p, num_power_iterations=panel_q, sample_vec=sv) setup = (Random.seed!(7)) evals = 1 samples = 30
+SUITE["panel"]["reigen_herm_2000_k100_panel"] =
+    @benchmarkable panel_reigen_solve(panel_plan_eigen) evals = 1 samples = 30
+SUITE["panel"]["rsvd_2000_k100_dense"] =
+    @benchmarkable rsvd(A_panel, panel_k; num_oversamples=panel_p, num_power_iterations=panel_q, sample_vec=sv) setup = (Random.seed!(7)) evals = 1 samples = 30
+SUITE["panel"]["rsvd_2000_k100_panel"] =
+    @benchmarkable panel_rsvd_solve(panel_plan_rsvd) evals = 1 samples = 30
 
 # ---------------------------------------------------------------------------
 # GPU benchmarks (only when CUDA is functional). Groups are prefixed "gpu-" so
