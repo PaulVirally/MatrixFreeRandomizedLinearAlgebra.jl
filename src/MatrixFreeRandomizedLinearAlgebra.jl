@@ -26,10 +26,21 @@ All routines also accept an optional `seed_Q` keyword: a pre-computed
 (approximately) orthonormal basis for the range of the operator, used to
 warm-start the range finder. This is useful when refining a previous solve or
 sweeping a parameter/time step, where a good basis is already known.
+
+Finally, every routine accepts a `plan` keyword. Passing a
+[Funicular.jl](https://www.paulvirally.com/Funicular.jl/dev/) `ResidencyPlan`
+(with Funicular loaded) holds the big `N × s` sketch matrices in Funicular
+`PanelMatrix` storage instead, which streams them through the device in column
+panels and spills the rest to host memory or disk. This makes a sketch larger
+than device memory possible, at the cost of moving the panels. Results then come
+back as [`PanelEigen`](@ref) / [`PanelSVD`](@ref) instead of `Eigen` / `SVD`.
 """
 module MatrixFreeRandomizedLinearAlgebra
 
 include("common.jl")
+
+include("panel.jl")
+export PanelEigen, PanelSVD, PanelFactored, materialize
 
 include("range_finder.jl")
 
