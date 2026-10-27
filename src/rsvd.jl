@@ -1,5 +1,4 @@
 using LinearAlgebra
-using CUDA
 using Random
 
 """

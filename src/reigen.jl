@@ -1,5 +1,4 @@
 using LinearAlgebra
-using CUDA
 using Random
 
 """
@@ -192,12 +191,7 @@ function eigen_hermitian_restricted(operator, Q, num_components::Int, sample_vec
     # LinearMap composites), then reduce with a single gemm.
     B = Q' * op_product(operator, Q, sample_vec) # B = Q' * A * Q
     B = Hermitian(materialize_mat(B, sample_vec))
-    if sample_vec isa CuArray
-        # CUDA.jl does not support eigen! yet for these matrices
-        S = eigen(B) # B = Ṽ * Λ̃ * Ṽ'
-    else
-        S = eigen!(B) # B = Ṽ * Λ̃ * Ṽ'
-    end
+    S = eigen(B) # B = Ṽ * Λ̃ * Ṽ'; not eigen!, which CUDA.jl lacks for these matrices
     idxs = sortperm(S.values, rev=true) # Sort eigenvalues in descending order
     k = min(num_components, size(B, 1)) # In case num_components > rank(B), we limit to rank(B)
     evals = S.values[idxs][1:k] # Λ = Λ̃
@@ -205,15 +199,13 @@ function eigen_hermitian_restricted(operator, Q, num_components::Int, sample_vec
     return Eigen(evals, evecs)
 end
 
+# Overridden in the CUDA extension: CUDA.jl has no in-place Hermitian eigvals.
+eigvals_hermitian!(B) = eigvals!(B)
+
 function eigvals_hermitian_restricted(operator, Q, num_components::Int, sample_vec::AbstractArray)
     B = Q' * op_product(operator, Q, sample_vec) # B = Q' * A * Q
     B = Hermitian(materialize_mat(B, sample_vec))
-    if sample_vec isa CuArray
-        # CUDA.jl does not support eigen! yet for these matrices
-        evals = eigen(B).values # B = Ṽ * Λ̃ * Ṽ'
-    else
-        evals = eigvals!(B) # B = Ṽ * Λ̃ * Ṽ'
-    end
+    evals = eigvals_hermitian!(B) # B = Ṽ * Λ̃ * Ṽ'
     sort!(evals, rev=true) # Sort eigenvalues in descending order
     k = min(num_components, size(B, 1)) # In case num_components > rank(B), we limit to rank(B)
     return evals[1:k] # Λ = Λ̃

@@ -1,4 +1,3 @@
-using CUDA
 using SparseArrays
 using LinearAlgebra
 using LinearMaps
@@ -12,18 +11,6 @@ to_host(A) = Array(A) # bring a (small) reduced block to the CPU for dense work
 
 # `A` is already exactly what we want, so there is nothing to do.
 materialize_mat(A::Matrix, ::Array) = A
-materialize_mat(A::CuMatrix, ::CuArray) = A # assumes a single GPU, which is all this package targets
-
-# The R factor that comes out of `qrthin!` on the GPU is an `UpperTriangular`
-# wrapping a `CuMatrix`. The generic `copyto!` below would read the implicit zeros
-# one element at a time (scalar indexing, which is slow or disallowed on the GPU),
-# so we copy the full parent and zero out the lower triangle with `triu!` instead.
-function materialize_mat(A::UpperTriangular{T,<:CuMatrix}, prototype::AbstractArray) where {T}
-    B = similar(prototype, T, size(A))
-    copyto!(B, parent(A))
-    triu!(B)
-    return B
-end
 
 # Anything else that is already a matrix: an Adjoint, Transpose, Hermitian or
 # UpperTriangular on the CPU, a sparse matrix, or a dense matrix sitting on the

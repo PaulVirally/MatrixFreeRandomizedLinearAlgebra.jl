@@ -1,5 +1,4 @@
 using LinearAlgebra
-using CUDA
 using Random
 
 # Compute the economy-size QR of A and return only Q. For tall/square inputs Q
@@ -24,17 +23,6 @@ function qthin!(A::Matrix{T}) where {T<:LinearAlgebra.BlasFloat}
     m >= n || (A = A[:, 1:m]) # wide: the m×m economy Q cannot fit A's shape
     LinearAlgebra.LAPACK.orgqr!(A, τ)
     return A
-end
-function qthin!(A::CuMatrix)
-    m = size(A, 1)
-    n = min(size(A)...)
-    τ = similar(A, n)
-    CUDA.CUSOLVER.geqrf!(A, τ)
-    CUDA.CUSOLVER.orgqr!(A, τ) # writes the thin Q into A's first n columns
-    m >= size(A, 2) && return A
-    Q = similar(A, eltype(A), m, n) # wide: extract the m×m economy Q
-    copyto!(Q, @view A[:, 1:n])
-    return Q
 end
 
 # Compute the economy-size QR of A in-place and return Q and R. For tall/square
@@ -71,24 +59,6 @@ function qrthin!(A::Matrix{T}) where {T<:LinearAlgebra.BlasFloat}
     R = triu!(copy(A)) # wide: full m×n upper-trapezoidal factor
     Q = A[:, 1:m] # the reflectors all live in the first m columns
     LinearAlgebra.LAPACK.orgqr!(Q, τ)
-    return Q, R
-end
-function qrthin!(A::CuMatrix)
-    m = size(A, 1)
-    n = min(size(A)...)
-    τ = similar(A, n)
-    CUDA.CUSOLVER.geqrf!(A, τ)
-    if m >= size(A, 2)
-        R = UpperTriangular(CuArray(@view A[1:n, 1:n]))
-        # orgqr! writes the thin Q into A's first n columns, so tall/square
-        # inputs need no copy at all.
-        CUDA.CUSOLVER.orgqr!(A, τ)
-        return A, R
-    end
-    R = triu(A) # wide: full m×n upper-trapezoidal factor, copied before orgqr!
-    CUDA.CUSOLVER.orgqr!(A, τ)
-    Q = similar(A, eltype(A), m, n)
-    copyto!(Q, @view A[:, 1:n])
     return Q, R
 end
 
